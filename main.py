@@ -9,7 +9,7 @@ from utils import plot
 
 def parse_arguments():
 	parser = argparse.ArgumentParser(description='Deep Q Network Argument Parser')
-	parser.add_argument('--env', default='FetchSlide-v1', type=str,
+	parser.add_argument('--env', default='FetchReach-v1', type=str,
 	                    help='[FetchReach-v1, FetchSlide-v1, FetchPush-v1, FetchPickAndPlace-v1]')
 	parser.add_argument('--model', default='algorithms', type=str, help='[algorithms, D3PG, IQDDPG]')
 	parser.add_argument('--eval', default=False, action='store_true',
@@ -23,8 +23,8 @@ def parse_arguments():
 	parser.add_argument('--batch-size', default=128, type=int)
 	parser.add_argument('--step', default=10, type=int, help='Number of gradient descent steps per episode')
 	parser.add_argument('--epsilon', default=0.3, type=float, help='Exploration noise, fixed in D4PG')
-	parser.add_argument('--train-episodes', default=2000, type=int, help='Number of episodes to train')
-	parser.add_argument('--save-episodes', default=200, type=int, help='Number of episodes to save model')
+	parser.add_argument('--train-episodes', default=1000, type=int, help='Number of episodes to train')
+	parser.add_argument('--save-episodes', default=100, type=int, help='Number of episodes to save model')
 	parser.add_argument('--memory-size', default=40000, type=int, help='Size of replay memory')
 	parser.add_argument('--C', default=1, type=int, help='Number of episodes to copy critic network to target network')
 	parser.add_argument('--N', type=int, default=10, help='N step returns.')
