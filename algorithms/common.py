@@ -3,6 +3,10 @@ import collections
 import numpy as np
 import tensorflow as tf
 
+OBSERVATION_KEY = 'observation'
+ACHIEVED_GOAL_KEY = 'achieved_goal'
+DESIRED_GOAL_KEY = 'desired_goal'
+
 
 def get_target_updates(vars, target_vars, tau):
 	soft_updates = []
@@ -32,13 +36,17 @@ class Replay_Memory():
 		indices = np.random.choice(len(self.states), size=batch_size, replace=True)
 
 		return np.array(self.states)[indices], \
-			   np.array(self.actions)[indices], \
-			   np.array(self.rewards)[indices], \
-			   np.array(self.nexts)[indices], \
-			   np.array(self.are_non_terminal)[indices]
+		       np.array(self.actions)[indices], \
+		       np.array(self.rewards)[indices], \
+		       np.array(self.nexts)[indices], \
+		       np.array(self.are_non_terminal)[indices]
 
 	def append(self, states, actions, rewards, nexts, are_non_terminal):
 		# Appends transition to the memory.
+		assert len(states) == len(actions) and \
+		       len(actions) == len(rewards) and \
+		       len(rewards) == len(nexts) and \
+		       len(nexts) == len(are_non_terminal)
 		self.states += states
 		self.actions += actions
 		self.rewards += rewards
@@ -57,9 +65,9 @@ class Actor(object):
 			hidden = states
 			for hidden_dim in self.hidden_dims:
 				hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
-										 kernel_initializer=tf.initializers.variance_scaling())
+				                         kernel_initializer=tf.initializers.variance_scaling())
 			return tf.layers.dense(hidden, self.action_dim, activation=tf.nn.tanh,
-								   kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3))
+			                       kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3))
 
 
 class Critic(object):
@@ -69,11 +77,10 @@ class Critic(object):
 
 	def __call__(self, states, actions):
 		with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
-			hidden = tf.layers.dense(states, self.hidden_dims[0], activation=tf.nn.relu,
-									 kernel_initializer=tf.initializers.variance_scaling())
-			hidden = tf.concat([hidden, actions], 1)
-			for hidden_dim in self.hidden_dims[1:]:
+			# follow the practice of Open AI baselines
+			hidden = tf.concat([states, actions], 1)
+			for hidden_dim in self.hidden_dims:
 				hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
-										 kernel_initializer=tf.initializers.variance_scaling())
+				                         kernel_initializer=tf.initializers.variance_scaling())
 			return tf.layers.dense(hidden, 1, activation=None,
-								   kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3))
+			                       kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3))
