@@ -5,12 +5,13 @@ from typing import *
 from tqdm import tqdm
 
 from algorithms.common import *
+from utils import append_summary
 
 
 class DDPG(object):
 
 	def __init__(self, env, hidden_dims, replay_memory=None, gamma=1.0, init_std=0.2, tau=1e-2,
-	             actor_lr=1e-3, critic_lr=1e-3, N=5, her_reward=-0.1, delta=1.0):
+	             actor_lr=1e-3, critic_lr=1e-3, N=5):
 		self.env = env
 		self.goal_dim = reduce(mul, env.observation_space.spaces['desired_goal'].shape)
 		self.state_dim = reduce(mul, env.observation_space.spaces['observation'].shape) + self.goal_dim
@@ -22,8 +23,6 @@ class DDPG(object):
 		self.actor_lr = actor_lr
 		self.critic_lr = critic_lr
 		self.N = N
-		self.her_reward = her_reward
-		self.delta = delta
 
 		self.actor = Actor(hidden_dims, self.action_dim, 'actor')
 		self.actor_target = Actor(hidden_dims, self.action_dim, 'target_actor')
@@ -37,6 +36,7 @@ class DDPG(object):
 		self.build_loss()
 		self.build_copy_op()
 		self.build_step()
+		self.build_summary()
 
 	def build_placeholder(self):
 		self.states = tf.placeholder(tf.float32, shape=[None, self.state_dim])
@@ -69,6 +69,7 @@ class DDPG(object):
 		self.actor_loss = -tf.reduce_mean(self.critic(states, self.policy))
 
 	def build_step(self):
+		self.global_step = tf.Variable(0, trainable=False)
 		actor_optimizer = tf.train.AdamOptimizer(learning_rate=self.actor_lr)
 		with tf.control_dependencies([tf.Assert(tf.is_finite(self.actor_loss), [self.actor_loss])]):
 			self.actor_step = actor_optimizer.minimize(
@@ -79,14 +80,22 @@ class DDPG(object):
 		                             [tf.Assert(tf.is_finite(self.critic_loss), [self.critic_loss])]):
 			self.critic_step = critic_optimizer.minimize(
 				self.critic_loss,
-				var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'))
+				var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
+				global_step=self.global_step)
 
-	def train(self, sess, saver, model_path, batch_size=64, step=10, train_episodes=1000, save_episodes=100,
+	def build_summary(self):
+		tf.summary.scalar('critic_loss', self.critic_loss)
+		self.merged_summary_op = tf.summary.merge_all()
+
+	def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, train_episodes=1000,
+	          save_episodes=100,
 	          epsilon=0.3):
 		total_rewards = []
 		sess.run([self.init_actor, self.init_critic])
 		for i_episode in tqdm(range(train_episodes), ncols=100):
-			total_rewards.append(self.collect_trajectory(epsilon))
+			total_reward = self.collect_trajectory(epsilon)
+			append_summary(progress_fd, str(i_episode) + ',{0:.4f}'.format(total_reward))
+			total_rewards.append(total_reward)
 			states, actions, rewards, nexts, are_non_terminal = self.replay_memory.sample_batch(step * batch_size)
 			for t in range(step):
 				sess.run([self.critic_step],
@@ -99,30 +108,35 @@ class DDPG(object):
 				sess.run([self.actor_step],
 				         feed_dict={self.states: states[t * batch_size: (t + 1) * batch_size], self.training: True})
 				sess.run([self.update_actor, self.update_critic])
+			# summary_writer.add_summary(summary, global_step=self.global_step.eval())
 			if (i_episode + 1) % save_episodes == 0:
 				saver.save(sess, model_path)
 		return total_rewards
 
+	def apply_her(self, states: np.array, achieved_goals: np.array, actions: List):
+		desired_goals = np.zeros_like(achieved_goals)
+		for T in range(len(achieved_goals)):
+			goal = achieved_goals[T]
+			desired_goals[:T + 1, ] = goal
+			rewards = self.env.compute_reward(achieved_goals[:T + 1], desired_goals[:T + 1], None)
+			returns, nexts, are_non_terminal = self.normalize_returns(states[1:T + 2], list(rewards))
+			self.replay_memory.append(list(concat_state_goal(states[:T + 1], desired_goals[:T + 1])),
+			                          actions[:T + 1], returns,
+			                          list(concat_state_goal(nexts, desired_goals[:T + 1])),
+			                          are_non_terminal)
+
 	def collect_trajectory(self, epsilon):
 		states, achieved_goals, desired_goals, actions, rewards = self.generate_episode(epsilon=epsilon)
-		states, desired_goals = np.array(states), np.array(desired_goals)
+		states, achieved_goals, desired_goals = np.array(states), np.array(achieved_goals), np.array(desired_goals)
 		returns, nexts, are_non_terminal = self.normalize_returns(states[1:], rewards)
 		total_reward = sum(rewards)
-		self.replay_memory.append(list(np.concatenate((states[:-1], desired_goals), axis=1)),
+		self.replay_memory.append(list(concat_state_goal(states[:-1], desired_goals)),
 		                          actions, returns,
-		                          list(np.concatenate((nexts, desired_goals), axis=1)),
+		                          list(concat_state_goal(nexts, desired_goals)),
 		                          are_non_terminal)
 
 		# hindsight experience
-		goal = np.zeros_like(achieved_goals)
-		goal[:, ] = achieved_goals[-1]
-		rewards = self.her_reward * (np.linalg.norm(achieved_goals - goal, axis=1) > self.delta)
-		returns, nexts, are_non_terminal = self.normalize_returns(states[1:], list(rewards))
-		self.replay_memory.append(list(np.concatenate((states[:-1], goal), axis=1)),
-		                          actions, returns,
-		                          list(np.concatenate((nexts, goal), axis=1)),
-		                          are_non_terminal)
-
+		self.apply_her(states, achieved_goals, actions)
 		return total_reward
 
 	def normalize_returns(self, nexts: np.array, rewards: List) -> Tuple[List, np.array, List]:
@@ -134,6 +148,7 @@ class DDPG(object):
 		WARNING: make sure states, rewards come from the same episode
 		'''
 		T = len(nexts)
+		assert len(rewards) == T
 		nexts = np.roll(nexts, -self.N, axis=0)
 		are_non_terminal = np.ones(T)
 		if T >= self.N:

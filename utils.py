@@ -6,6 +6,10 @@ import numpy as np
 
 NUM_POINTS = 300.0
 
+def append_summary(progress_fd, summary):
+	progress_fd.write(summary + '\n')
+	progress_fd.flush()
+
 
 def plot(prefix, rewards):
 	x_gap = len(rewards) / NUM_POINTS

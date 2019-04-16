@@ -8,6 +8,10 @@ ACHIEVED_GOAL_KEY = 'achieved_goal'
 DESIRED_GOAL_KEY = 'desired_goal'
 
 
+def concat_state_goal(states, goals):
+	return np.concatenate((states, goals), axis=-1)
+
+
 def get_target_updates(vars, target_vars, tau):
 	soft_updates = []
 	init_updates = []
