@@ -94,7 +94,7 @@ class DDPG(object):
 		sess.run([self.init_actor, self.init_critic])
 		for i_episode in tqdm(range(train_episodes), ncols=100):
 			total_reward = self.collect_trajectory(epsilon)
-			append_summary(progress_fd, str(i_episode) + ',{0:.4f}'.format(total_reward))
+			append_summary(progress_fd, str(i_episode) + ',{0:.2f}'.format(total_reward))
 			total_rewards.append(total_reward)
 			states, actions, rewards, nexts, are_non_terminal = self.replay_memory.sample_batch(step * batch_size)
 			for t in range(step):
