@@ -92,11 +92,11 @@ class DDPG(object):
 		self.merged_summary_op = tf.summary.merge_all()
 
 	def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
-	          train_episodes=1000, save_episodes=100, epsilon=0.3):
+	          train_episodes=1000, save_episodes=100, epsilon=0.3, n_goals=10):
 		total_rewards = []
 		sess.run([self.init_actor, self.init_critic])
 		for i_episode in tqdm(range(train_episodes), ncols=100):
-			total_reward = self.collect_trajectory(epsilon)
+			total_reward = self.collect_trajectory(epsilon, n_goals)
 			append_summary(progress_fd, str(start_episode + i_episode) + ',{0:.2f}'.format(total_reward))
 			total_rewards.append(total_reward)
 			states, actions, rewards, nexts, are_non_terminal = self.replay_memory.sample_batch(step * batch_size)
@@ -116,9 +116,9 @@ class DDPG(object):
 				saver.save(sess, model_path)
 		return total_rewards
 
-	def apply_her(self, states: np.array, achieved_goals: np.array, actions: List):
+	def apply_her(self, states: np.array, achieved_goals: np.array, actions: List, n_goals: int):
 		desired_goals = np.zeros_like(achieved_goals)
-		for T in range(1, len(achieved_goals) + 1):
+		for T in np.random.randint(low=1, high=len(achieved_goals) + 1, size=n_goals):
 			goal = achieved_goals[T - 1]
 			desired_goals[:T,] = goal
 			rewards = self.env.compute_reward(achieved_goals[:T], desired_goals[:T], None)
@@ -128,7 +128,7 @@ class DDPG(object):
 			                          list(concat_state_goal(nexts, desired_goals[:T])),
 			                          are_non_terminal)
 
-	def collect_trajectory(self, epsilon):
+	def collect_trajectory(self, epsilon, n_goals):
 		states, achieved_goals, desired_goals, actions, rewards = self.generate_episode(epsilon=epsilon)
 		states, achieved_goals, desired_goals = np.array(states), np.array(achieved_goals), np.array(desired_goals)
 		returns, nexts, are_non_terminal = self.normalize_returns(states[1:], rewards)
@@ -139,7 +139,7 @@ class DDPG(object):
 		                          are_non_terminal)
 
 		# hindsight experience
-		self.apply_her(states, achieved_goals, actions)
+		self.apply_her(states, achieved_goals, actions, n_goals=n_goals)
 		return total_reward
 
 	def normalize_returns(self, nexts: np.array, rewards: List) -> Tuple[List, np.array, List]:

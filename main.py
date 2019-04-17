@@ -29,9 +29,10 @@ def parse_arguments():
 	parser.add_argument('--batch-size', default=256, type=int)
 	parser.add_argument('--step', default=100, type=int, help='Number of gradient descent steps per episode')
 	parser.add_argument('--epsilon', default=0.2, type=float, help='Exploration noise, fixed in D4PG')
-	parser.add_argument('--train-episodes', default=1000, type=int, help='Number of episodes to train')
+	parser.add_argument('--train-episodes', default=100, type=int, help='Number of episodes to train')
 	parser.add_argument('--save-episodes', default=100, type=int, help='Number of episodes to save model')
 	parser.add_argument('--memory-size', default=1000000, type=int, help='Size of replay memory')
+	parser.add_argument('--n-goals', default=10, type=int, help='Number of goals to sample for HER')
 	parser.add_argument('--C', default=1, type=int, help='Number of episodes to copy critic network to target network')
 	parser.add_argument('--N', default=10, type=int, help='N step returns.')
 	parser.add_argument('--plot-dir', default='plot/', type=str, )
@@ -103,7 +104,7 @@ if __name__ == '__main__':
 			total_rewards = agent.train(
 				sess, saver, summary_writer, progress_fd, model_path, batch_size=args.batch_size, step=args.step,
 				train_episodes=args.train_episodes, start_episode=start_episode, save_episodes=args.save_episodes,
-				epsilon=args.epsilon)
+				epsilon=args.epsilon, n_goals=args.n_goals)
 			progress_fd.close()
 			plot(os.path.join(args.plot_dir, args.model + '_' + args.env), np.array(total_rewards) + 1e-10)
 		else:
