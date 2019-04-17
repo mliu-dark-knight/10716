@@ -15,30 +15,30 @@ def parse_arguments():
 	parser = argparse.ArgumentParser(description='Deep Q Network Argument Parser')
 	parser.add_argument('--env', default='FetchReach-v1', type=str,
 	                    help='[FetchReach-v1, FetchSlide-v1, FetchPush-v1, FetchPickAndPlace-v1]')
-	parser.add_argument('--model', default='QRDDPG', type=str, help='[DDPG, D3PG, QRDDPG]')
+	parser.add_argument('--model', default='DDPG', type=str, help='[DDPG, D3PG, QRDDPG]')
 	parser.add_argument('--eval', default=False, action='store_true',
 	                    help='Set this to False when training and True when evaluating.')
 	parser.add_argument('--restore', default=False, action='store_true', help='Restore training')
 	parser.add_argument('--hidden-dims', default=[256, 256], type=list, help='Hidden dimension of network')
 	parser.add_argument('--gamma', default=1.0, type=float, help='Reward discount')
-	parser.add_argument('--tau', default=1e-3, type=float, help='Soft parameter update tau')
+	parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
 	parser.add_argument('--kappa', default=1.0, type=float, help='Kappa used in quantile Huber loss')
 	parser.add_argument('--n-quantile', default=16, type=int, help='Number of quantile to approximate distribution')
 	parser.add_argument('--actor-lr', default=1e-4, type=float, help='Actor learning rate')
-	parser.add_argument('--critic-lr', default=1e-4, type=float, help='Critic learning rate')
+	parser.add_argument('--critic-lr', default=1e-3, type=float, help='Critic learning rate')
 	parser.add_argument('--batch-size', default=256, type=int)
 	parser.add_argument('--step', default=100, type=int, help='Number of gradient descent steps per episode')
 	parser.add_argument('--epsilon', default=0.2, type=float, help='Exploration noise, fixed in D4PG')
-	parser.add_argument('--train-episodes', default=100, type=int, help='Number of episodes to train')
+	parser.add_argument('--train-episodes', default=1000, type=int, help='Number of episodes to train')
 	parser.add_argument('--save-episodes', default=100, type=int, help='Number of episodes to save model')
 	parser.add_argument('--memory-size', default=1000000, type=int, help='Size of replay memory')
 	parser.add_argument('--C', default=1, type=int, help='Number of episodes to copy critic network to target network')
-	parser.add_argument('--N', type=int, default=10, help='N step returns.')
-	parser.add_argument('--plot-dir', type=str, default='plot/')
-	parser.add_argument('--model-dir', default='model/')
-	parser.add_argument('--log-dir', default='log/')
-	parser.add_argument('--progress-file', default='progress.csv')
-	parser.add_argument('--device', default=3, help='GPU device number')
+	parser.add_argument('--N', default=10, type=int, help='N step returns.')
+	parser.add_argument('--plot-dir', default='plot/', type=str, )
+	parser.add_argument('--model-dir', default='model/', type=str)
+	parser.add_argument('--log-dir', default='log/', type=str)
+	parser.add_argument('--progress-file', default='progress.csv', type=str)
+	parser.add_argument('--device', default=3, type=int, help='GPU device number')
 	return parser.parse_args()
 
 
@@ -79,7 +79,7 @@ if __name__ == '__main__':
 		else:
 			raise NotImplementedError
 
-	gpu_ops = tf.GPUOptions(allow_growth=True)
+	gpu_ops = tf.GPUOptions(per_process_gpu_memory_fraction=0.25, allow_growth=True)
 	config = tf.ConfigProto(gpu_options=gpu_ops, allow_soft_placement=True)
 
 	saver = tf.train.Saver()

@@ -118,14 +118,14 @@ class DDPG(object):
 
 	def apply_her(self, states: np.array, achieved_goals: np.array, actions: List):
 		desired_goals = np.zeros_like(achieved_goals)
-		for T in range(len(achieved_goals)):
-			goal = achieved_goals[T]
-			desired_goals[:T + 1, ] = goal
-			rewards = self.env.compute_reward(achieved_goals[:T + 1], desired_goals[:T + 1], None)
-			returns, nexts, are_non_terminal = self.normalize_returns(states[1:T + 2], list(rewards))
-			self.replay_memory.append(list(concat_state_goal(states[:T + 1], desired_goals[:T + 1])),
-			                          actions[:T + 1], returns,
-			                          list(concat_state_goal(nexts, desired_goals[:T + 1])),
+		for T in range(1, len(achieved_goals) + 1):
+			goal = achieved_goals[T - 1]
+			desired_goals[:T,] = goal
+			rewards = self.env.compute_reward(achieved_goals[:T], desired_goals[:T], None)
+			returns, nexts, are_non_terminal = self.normalize_returns(states[1:T + 1], list(rewards))
+			self.replay_memory.append(list(concat_state_goal(states[:T], desired_goals[:T])),
+			                          actions[:T], returns,
+			                          list(concat_state_goal(nexts, desired_goals[:T])),
 			                          are_non_terminal)
 
 	def collect_trajectory(self, epsilon):
