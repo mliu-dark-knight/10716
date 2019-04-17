@@ -87,14 +87,13 @@ class DDPG(object):
 		tf.summary.scalar('critic_loss', self.critic_loss)
 		self.merged_summary_op = tf.summary.merge_all()
 
-	def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, train_episodes=1000,
-	          save_episodes=100,
-	          epsilon=0.3):
+	def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
+	          train_episodes=1000, save_episodes=100, epsilon=0.3):
 		total_rewards = []
 		sess.run([self.init_actor, self.init_critic])
 		for i_episode in tqdm(range(train_episodes), ncols=100):
 			total_reward = self.collect_trajectory(epsilon)
-			append_summary(progress_fd, str(i_episode) + ',{0:.2f}'.format(total_reward))
+			append_summary(progress_fd, str(start_episode + i_episode) + ',{0:.2f}'.format(total_reward))
 			total_rewards.append(total_reward)
 			states, actions, rewards, nexts, are_non_terminal = self.replay_memory.sample_batch(step * batch_size)
 			for t in range(step):

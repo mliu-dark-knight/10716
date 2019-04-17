@@ -79,16 +79,21 @@ if __name__ == '__main__':
 		if args.eval or args.restore:
 			saver.restore(sess, model_path)
 			if not args.eval:
+				progress_fd = open(progress_file, 'r')
+				start_episode = len(progress_fd.readlines()) - 1
+				progress_fd.close()
 				progress_fd = open(progress_file, 'a')
 		else:
 			progress_fd = open(progress_file, 'w')
 			append_summary(progress_fd, 'episode,total-reward')
 			progress_fd.flush()
+			start_episode = 0
 			tf.global_variables_initializer().run()
 		if not args.eval:
 			total_rewards = agent.train(
 				sess, saver, summary_writer, progress_fd, model_path, batch_size=args.batch_size, step=args.step,
-				train_episodes=args.train_episodes, save_episodes=args.save_episodes, epsilon=args.epsilon)
+				train_episodes=args.train_episodes, start_episode=start_episode, save_episodes=args.save_episodes,
+				epsilon=args.epsilon)
 			progress_fd.close()
 			plot(os.path.join(args.plot_dir, args.model + '_' + args.env), np.array(total_rewards) + 1e-10)
 		else:
