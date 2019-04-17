@@ -2,30 +2,36 @@ import argparse
 import os
 
 import gym
+import numpy as np
+import tensorflow as tf
 
-from algorithms.DDPG import *
+from algorithms.DDPG import DDPG
+from algorithms.QRDDPG import QRDDPG
+from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 
 
 def parse_arguments():
 	parser = argparse.ArgumentParser(description='Deep Q Network Argument Parser')
-	parser.add_argument('--env', default='FetchSlide-v1', type=str,
-						help='[FetchReach-v1, FetchSlide-v1, FetchPush-v1, FetchPickAndPlace-v1]')
-	parser.add_argument('--model', default='DDPG', type=str, help='[DDPG, D3PG, IQDDPG]')
+	parser.add_argument('--env', default='FetchReach-v1', type=str,
+	                    help='[FetchReach-v1, FetchSlide-v1, FetchPush-v1, FetchPickAndPlace-v1]')
+	parser.add_argument('--model', default='QRDDPG', type=str, help='[DDPG, D3PG, QRDDPG]')
 	parser.add_argument('--eval', default=False, action='store_true',
-						help='Set this to False when training and True when evaluating.')
+	                    help='Set this to False when training and True when evaluating.')
 	parser.add_argument('--restore', default=False, action='store_true', help='Restore training')
 	parser.add_argument('--hidden-dims', default=[256, 256], type=list, help='Hidden dimension of network')
 	parser.add_argument('--gamma', default=1.0, type=float, help='Reward discount')
-	parser.add_argument('--tau', default=1e-2, type=float, help='algorithms soft parameter update tau')
+	parser.add_argument('--tau', default=1e-3, type=float, help='Soft parameter update tau')
+	parser.add_argument('--kappa', default=1.0, type=float, help='Kappa used in quantile Huber loss')
+	parser.add_argument('--n-quantile', default=16, type=int, help='Number of quantile to approximate distribution')
 	parser.add_argument('--actor-lr', default=1e-4, type=float, help='Actor learning rate')
-	parser.add_argument('--critic-lr', default=1e-3, type=float, help='Critic learning rate')
+	parser.add_argument('--critic-lr', default=1e-4, type=float, help='Critic learning rate')
 	parser.add_argument('--batch-size', default=256, type=int)
 	parser.add_argument('--step', default=100, type=int, help='Number of gradient descent steps per episode')
 	parser.add_argument('--epsilon', default=0.2, type=float, help='Exploration noise, fixed in D4PG')
-	parser.add_argument('--train-episodes', default=1000, type=int, help='Number of episodes to train')
+	parser.add_argument('--train-episodes', default=100, type=int, help='Number of episodes to train')
 	parser.add_argument('--save-episodes', default=100, type=int, help='Number of episodes to save model')
-	parser.add_argument('--memory-size', default=100000, type=int, help='Size of replay memory')
+	parser.add_argument('--memory-size', default=1000000, type=int, help='Size of replay memory')
 	parser.add_argument('--C', default=1, type=int, help='Number of episodes to copy critic network to target network')
 	parser.add_argument('--N', type=int, default=10, help='N step returns.')
 	parser.add_argument('--plot-dir', type=str, default='plot/')
@@ -65,7 +71,11 @@ if __name__ == '__main__':
 			replay_memory = Replay_Memory(memory_size=args.memory_size)
 		if args.model == 'DDPG':
 			agent = DDPG(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
-						 actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N)
+			             actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N)
+		elif args.model == 'QRDDPG':
+			agent = QRDDPG(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
+			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, kappa=args.kappa,
+			               n_quantile=args.n_quantile)
 		else:
 			raise NotImplementedError
 

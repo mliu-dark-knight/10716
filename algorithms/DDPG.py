@@ -13,6 +13,7 @@ class DDPG(object):
 	def __init__(self, env, hidden_dims, replay_memory=None, gamma=1.0, init_std=0.2, tau=1e-2,
 	             actor_lr=1e-3, critic_lr=1e-3, N=5):
 		self.env = env
+		self.hidden_dims = hidden_dims
 		self.goal_dim = reduce(mul, env.observation_space.spaces['desired_goal'].shape)
 		self.state_dim = reduce(mul, env.observation_space.spaces['observation'].shape) + self.goal_dim
 		self.action_dim = reduce(mul, env.action_space.shape)
@@ -23,20 +24,23 @@ class DDPG(object):
 		self.actor_lr = actor_lr
 		self.critic_lr = critic_lr
 		self.N = N
-
-		self.actor = Actor(hidden_dims, self.action_dim, 'actor')
-		self.actor_target = Actor(hidden_dims, self.action_dim, 'target_actor')
-		self.critic = Critic(hidden_dims, 'critic')
-		self.critic_target = Critic(hidden_dims, 'target_critic')
 		self.replay_memory = replay_memory
+
 		self.build()
 
 	def build(self):
+		self.build_actor_critic()
 		self.build_placeholder()
 		self.build_loss()
 		self.build_copy_op()
 		self.build_step()
 		self.build_summary()
+
+	def build_actor_critic(self):
+		self.actor = Actor(self.hidden_dims, self.action_dim, 'actor')
+		self.actor_target = Actor(self.hidden_dims, self.action_dim, 'target_actor')
+		self.critic = Critic(self.hidden_dims, 'critic')
+		self.critic_target = Critic(self.hidden_dims, 'target_critic')
 
 	def build_placeholder(self):
 		self.states = tf.placeholder(tf.float32, shape=[None, self.state_dim])
