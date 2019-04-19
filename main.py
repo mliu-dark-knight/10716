@@ -12,11 +12,12 @@ from utils import plot, append_summary
 
 
 def parse_arguments():
-	parser = argparse.ArgumentParser(description='Deep Q Network Argument Parser')
-	parser.add_argument('--env', default='FetchReach-v1', type=str,
-	                    help='[FetchReach-v1, FetchSlide-v1, FetchPush-v1, FetchPickAndPlace-v1]')
-	parser.add_argument('--model', default='DDPG', type=str, help='[DDPG, D3PG, QRDDPG]')
-	parser.add_argument('--eval', default=False, action='store_true',
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--env', default='FetchPush-v1', type=str,
+	                    help='[FetchReach-v1, FetchSlide-v1, FetchPush-v1, FetchPickAndPlace-v1,'
+	                         'HandReach-v0, HandManipulateBlock-v0, HandManipulateEgg-v0, HandManipulatePen-v0]')
+	parser.add_argument('--model', default='QRDDPG', type=str, help='[DDPG, D3PG, QRDDPG]')
+	parser.add_argument('--eval', default=True, action='store_true',
 	                    help='Set this to False when training and True when evaluating.')
 	parser.add_argument('--restore', default=False, action='store_true', help='Restore training')
 	parser.add_argument('--hidden-dims', default=[256, 256], type=list, help='Hidden dimension of network')
