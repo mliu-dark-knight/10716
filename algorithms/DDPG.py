@@ -117,8 +117,10 @@ class DDPG(object):
 		return total_rewards
 
 	def apply_her(self, states: np.array, achieved_goals: np.array, actions: List, n_goals: int):
+		if len(achieved_goals) < self.N:
+			return
 		desired_goals = np.zeros_like(achieved_goals)
-		for T in np.random.randint(low=1, high=len(achieved_goals) + 1, size=n_goals):
+		for T in np.random.randint(low=self.N, high=len(achieved_goals) + 1, size=n_goals):
 			goal = achieved_goals[T - 1]
 			desired_goals[:T,] = goal
 			rewards = self.env.compute_reward(achieved_goals[:T], desired_goals[:T], None)
