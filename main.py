@@ -13,13 +13,14 @@ from utils import plot, append_summary
 
 def parse_arguments():
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--env', default='FetchPush-v1', type=str,
+	parser.add_argument('--env', default='HandReach-v0', type=str,
 	                    help='[FetchReach-v1, FetchSlide-v1, FetchPush-v1, FetchPickAndPlace-v1,'
 	                         'HandReach-v0, HandManipulateBlock-v0, HandManipulateEgg-v0, HandManipulatePen-v0]')
 	parser.add_argument('--model', default='QRDDPG', type=str, help='[DDPG, D3PG, QRDDPG]')
-	parser.add_argument('--eval', default=True, action='store_true',
+	parser.add_argument('--eval', default=False, action='store_true',
 	                    help='Set this to False when training and True when evaluating.')
 	parser.add_argument('--restore', default=False, action='store_true', help='Restore training')
+	parser.add_argument('--reward-type', default='dense', help='[spase, dense]')
 	parser.add_argument('--hidden-dims', default=[256, 256], type=list, help='Hidden dimension of network')
 	parser.add_argument('--gamma', default=1.0, type=float, help='Reward discount')
 	parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
@@ -33,6 +34,7 @@ def parse_arguments():
 	parser.add_argument('--train-episodes', default=100, type=int, help='Number of episodes to train')
 	parser.add_argument('--save-episodes', default=100, type=int, help='Number of episodes to save model')
 	parser.add_argument('--memory-size', default=1000000, type=int, help='Size of replay memory')
+	parser.add_argument('--apply-her', default=True, action='store_true', help='Use HER or not')
 	parser.add_argument('--n-goals', default=10, type=int, help='Number of goals to sample for HER')
 	parser.add_argument('--C', default=1, type=int, help='Number of episodes to copy critic network to target network')
 	parser.add_argument('--N', default=10, type=int, help='N step returns.')
@@ -63,7 +65,7 @@ if __name__ == '__main__':
 	else:
 		device = '/cpu:0'
 
-	environment = gym.make(args.env)
+	environment = gym.make(args.env, reward_type=args.reward_type)
 
 	tf.reset_default_graph()
 	with tf.device(device):
@@ -105,7 +107,7 @@ if __name__ == '__main__':
 			total_rewards = agent.train(
 				sess, saver, summary_writer, progress_fd, model_path, batch_size=args.batch_size, step=args.step,
 				train_episodes=args.train_episodes, start_episode=start_episode, save_episodes=args.save_episodes,
-				epsilon=args.epsilon, n_goals=args.n_goals)
+				epsilon=args.epsilon, apply_her=args.apply_her, n_goals=args.n_goals)
 			progress_fd.close()
 			plot(os.path.join(args.plot_dir, args.model + '_' + args.env), np.array(total_rewards) + 1e-10)
 		else:
