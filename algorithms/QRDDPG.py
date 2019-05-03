@@ -2,15 +2,12 @@ from algorithms.DDPG import *
 
 
 class QRCritic(object):
-	def __init__(self, state_dim, action_dim, hidden_dims, n_quantile, scope):
-		self.state_dim = state_dim
+	def __init__(self, action_dim, hidden_dims, n_quantile, scope):
 		self.action_dim = action_dim
 		self.hidden_dims = hidden_dims
 		self.n_quantile = n_quantile
 		self.scope = scope
-
 	def __call__(self, states, actions):
-		batch_size = states.shape[0]
 		with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
 			# follow the practice of Open AI baselines
 			hidden = tf.concat([states, actions], axis=1)
@@ -31,9 +28,8 @@ class QRDDPG(DDPG):
 	def build_actor_critic(self):
 		self.actor = Actor(self.hidden_dims, self.action_dim, 'actor')
 		self.actor_target = Actor(self.hidden_dims, self.action_dim, 'target_actor')
-		self.critic = QRCritic(self.state_dim, self.action_dim, self.hidden_dims, self.n_quantile, 'critic')
-		self.critic_target = QRCritic(self.hidden_dims, self.action_dim, self.hidden_dims, self.n_quantile,
-		                              'target_critic')
+		self.critic = QRCritic(self.action_dim, self.hidden_dims, self.n_quantile, 'critic')
+		self.critic_target = QRCritic(self.action_dim, self.hidden_dims, self.n_quantile, 'target_critic')
 
 	def build_loss(self):
 		with tf.variable_scope('normalize_states'):
