@@ -1,5 +1,6 @@
 # Created by .ignore support plugin (hsz.mobi)
 .idea/
-Imagination/__pycache__/
+*.pyc
 /model/
 /log/
+.vscode
