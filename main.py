@@ -7,6 +7,7 @@ import tensorflow as tf
 
 from algorithms.DDPG import DDPG
 from algorithms.QRDDPG import QRDDPG
+from algorithms.D3PG import D3PG
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 
@@ -28,6 +29,7 @@ def parse_arguments():
 	parser.add_argument('--n-quantile', default=16, type=int, help='Number of quantile to approximate distribution')
 	parser.add_argument('--actor-lr', default=1e-4, type=float, help='Actor learning rate')
 	parser.add_argument('--critic-lr', default=1e-3, type=float, help='Critic learning rate')
+	parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
 	parser.add_argument('--batch-size', default=256, type=int)
 	parser.add_argument('--step', default=100, type=int, help='Number of gradient descent steps per episode')
 	parser.add_argument('--epsilon', default=0.2, type=float, help='Exploration noise, fixed in D4PG')
@@ -80,6 +82,11 @@ if __name__ == '__main__':
 			agent = QRDDPG(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
 			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, kappa=args.kappa,
 			               n_quantile=args.n_quantile)
+		elif args.model == 'D3PG':
+			# Need a better way for setting v_min and v_max
+			agent = D3PG(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
+			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, n_atom = args.n_atom,
+						   v_min=-50, v_max=0, batch_size=args.batch_size)
 		else:
 			raise NotImplementedError
 
