@@ -20,13 +20,12 @@ class DistCritic(object):
 
 class D3PG(DDPG):
 
-    def __init__(self, *args, n_atom=51, v_min=-50.0, v_max=0., batch_size=256, **kwargs):
+    def __init__(self, *args, n_atom=51, v_min=-50.0, v_max=0., **kwargs):
         self.n_atom = n_atom
         self.v_min = float(v_min) 
         self.v_max = float(v_max)
         self.dz = (v_max - v_min) / (self.n_atom - 1.)
         self.atoms = tf.linspace(self.v_min, self.v_max, n_atom)
-        self.batch_size = batch_size
         super(D3PG, self).__init__(*args, **kwargs)
 
     def build_actor_critic(self):
@@ -34,6 +33,7 @@ class D3PG(DDPG):
         self.actor_target = Actor(self.hidden_dims, self.action_dim, 'target_actor')
         self.critic = DistCritic(self.action_dim, self.hidden_dims, self.n_atom, 'critic')
         self.critic_target = DistCritic(self.action_dim, self.hidden_dims, self.n_atom, 'target_critic')
+
 
     def build_loss(self):
         with tf.variable_scope('normalize_states'):
@@ -45,9 +45,11 @@ class D3PG(DDPG):
         target_atom = tf.expand_dims(self.rewards, axis=1) + tf.expand_dims(self.are_non_terminal, axis=1) * \
             np.power(self.gamma, self.N) * self.atoms
         projected = self.project_distribution(target_atom, target_Z, self.atoms)
-        self.critic_loss = -tf.reduce_sum(projected*tf.log(1e-10+self.critic(states, self.actions)))
+        self.critic_loss = tf.reduce_mean(tf.reduce_sum(projected*tf.log(1e-10+self.critic(states, self.actions)), axis=1), axis=0)
         self.policy = self.actor(states)
-        self.actor_loss = -tf.reduce_mean(tf.reduce_mean(self.critic(states, self.policy), axis=1), axis=0)
+        probabilities = tf.reduce_mean(self.critic(states, self.policy), axis=0)
+        EZ = tf.reduce_sum(probabilities*self.atoms)
+        self.actor_loss = -EZ
 
     def project_distribution(self, supports, weights, target_support):	
     # see https://github.com/google/dopamine/blob/master/dopamine/agents/rainbow/rainbow_agent.py

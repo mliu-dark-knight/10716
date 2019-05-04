@@ -86,7 +86,7 @@ if __name__ == '__main__':
 			# Need a better way for setting v_min and v_max
 			agent = D3PG(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
 			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, n_atom = args.n_atom,
-						   v_min=-50, v_max=0, batch_size=args.batch_size)
+						   v_min=-100, v_max=100)
 		else:
 			raise NotImplementedError
 
