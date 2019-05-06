@@ -34,21 +34,25 @@ class D3PG(DDPG):
         self.critic = DistCritic(self.action_dim, self.hidden_dims, self.n_atom, 'critic')
         self.critic_target = DistCritic(self.action_dim, self.hidden_dims, self.n_atom, 'target_critic')
 
+    def build_target_distribution(self):
+        with tf.variable_scope('normalize_states'):
+            bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
+            nexts = bn.apply(self.nexts, training=self.training)
+        target_Z = self.critic_target(nexts, self.actor_target(nexts))
+        target_atom = tf.expand_dims(self.rewards, axis=1) + tf.expand_dims(self.are_non_terminal, axis=1) * \
+            np.power(self.gamma, self.N) * self.atoms
+        projected = self.project_distribution(target_atom, target_Z, self.atoms)
+        return projected
 
     def build_loss(self):
         with tf.variable_scope('normalize_states'):
             bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
             states = bn.apply(self.states, training=self.training)
-            nexts = bn.apply(self.nexts, training=self.training)
-        target_Z = tf.expand_dims(self.rewards, axis=1) + tf.expand_dims(self.are_non_terminal, axis=1) * \
-            np.power(self.gamma, self.N) * self.critic_target(nexts, self.actor_target(nexts))
-        target_atom = tf.expand_dims(self.rewards, axis=1) + tf.expand_dims(self.are_non_terminal, axis=1) * \
-            np.power(self.gamma, self.N) * self.atoms
-        projected = self.project_distribution(target_atom, target_Z, self.atoms)
-        self.critic_loss = tf.reduce_mean(tf.reduce_sum(projected*tf.log(1e-10+self.critic(states, self.actions)), axis=1), axis=0)
+        projected = tf.stop_gradient(self.build_target_distribution())
+        probabilities = self.critic(states, self.actions)
+        self.critic_loss = -tf.reduce_mean(tf.reduce_sum(projected*tf.log(1e-20+probabilities), axis=1), axis=0)
         self.policy = self.actor(states)
-        probabilities = tf.reduce_mean(self.critic(states, self.policy), axis=0)
-        EZ = tf.reduce_sum(probabilities*self.atoms)
+        EZ = tf.reduce_mean(tf.reduce_sum(self.critic(states, self.policy)*tf.expand_dims(self.atoms, axis=0), axis=1), axis=0)
         self.actor_loss = -EZ
 
     def project_distribution(self, supports, weights, target_support):	
