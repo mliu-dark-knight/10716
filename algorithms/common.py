@@ -23,8 +23,76 @@ def get_target_updates(vars, target_vars, tau):
 	assert len(soft_updates) == len(vars)
 	return tf.group(*init_updates), tf.group(*soft_updates)
 
-
 class Replay_Memory():
+
+	def __init__(self, memory_size):
+		self.memory_size = memory_size
+		self.states = None
+		self.actions = None 
+		self.rewards = None
+		self.nexts = None
+		self.are_non_terminal = None
+		self.cursor = -1
+		self.is_full = False
+	
+	def sample_batch(self, batch_size):
+		assert self.cursor >= 0
+		if self.is_full:
+			high = self.memory_size
+		else:
+			high = len(self.states)
+		indices = np.random.randint(low=0, high=high, size=batch_size)
+		return self.states[indices], \
+		       self.actions[indices], \
+			   self.rewards[indices], \
+		       self.nexts[indices], \
+		       self.are_non_terminal[indices]
+	
+	def append(self, states, actions, rewards, nexts, are_non_terminal):
+		# Appends transition to the memory.
+		n_sample = len(states)
+		assert len(states) == len(actions) and \
+		       len(actions) == len(rewards) and \
+		       len(rewards) == len(nexts) and \
+		       len(nexts) == len(are_non_terminal)
+		
+		if self.cursor == -1:
+			state_shape = len(states[0])
+			action_shape = len(actions[0])
+			self.states = np.zeros((self.memory_size, state_shape))
+			self.actions = np.zeros((self.memory_size, action_shape))
+			self.rewards = np.zeros(self.memory_size)
+			self.nexts = np.zeros((self.memory_size, state_shape))
+			self.are_non_terminal = np.zeros(self.memory_size)
+			self.cursor = 0
+		
+		states = np.array(states)
+		actions = np.array(actions)
+		rewards = np.array(rewards)
+		nexts = np.array(nexts)
+		are_non_terminal = np.array(are_non_terminal)
+		if self.cursor+n_sample > self.memory_size:
+			amount = self.cursor+n_sample-self.memory_size+1
+			if not self.is_full:
+				self.is_full = True
+		else:
+			amount = n_sample
+		self.states[self.cursor:self.cursor+amount] = states[:amount]
+		self.actions[self.cursor:self.cursor+amount] = actions[:amount]
+		self.rewards[self.cursor:self.cursor+amount] = rewards[:amount]
+		self.nexts[self.cursor:self.cursor+amount] = nexts[:amount]
+		self.are_non_terminal[self.cursor:self.cursor+amount] = are_non_terminal[:amount]
+		self.cursor = (self.cursor+amount)%self.memory_size
+		if amount < n_sample:
+			remain = n_sample - amount
+			self.states[self.cursor:self.cursor+remain] = states[amount:]
+			self.actions[self.cursor:self.cursor+remain] = actions[amount:]
+			self.rewards[self.cursor:self.cursor+remain] = rewards[amount:]
+			self.nexts[self.cursor:self.cursor+remain] = nexts[amount:]
+			self.are_non_terminal[self.cursor:self.cursor+remain] = are_non_terminal[amount:]
+			self.cursor = (self.cursor+remain)%self.memory_size
+
+class Replay_Memory_():
 
 	def __init__(self, memory_size):
 		self.states = collections.deque([], maxlen=memory_size)
@@ -37,8 +105,8 @@ class Replay_Memory():
 		self.are_non_terminal = collections.deque([], maxlen=memory_size)
 
 	def sample_batch(self, batch_size):
-		indices = np.random.choice(len(self.states), size=batch_size, replace=True)
-
+		indices = np.random.choice(len(self.states), 
+									   size=batch_size, replace=True)
 		return np.array(self.states)[indices], \
 		       np.array(self.actions)[indices], \
 		       np.array(self.rewards)[indices], \

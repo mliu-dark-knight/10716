@@ -58,15 +58,24 @@ class DDPG(object):
 		self.init_critic, self.update_critic = get_target_updates(
 			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
 			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_critic'), self.tau)
+	
+	def build_Q_target(self):
+		with tf.variable_scope('normalize_states'):
+			bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
+			nexts = bn.apply(self.nexts, training=self.training)
+		Q_target = self.rewards + self.are_non_terminal * np.power(self.gamma, self.N) * \
+		           tf.squeeze(self.critic_target(nexts, self.actor_target(nexts)), axis=1)
+		return Q_target
 
 	def build_loss(self):
 		with tf.variable_scope('normalize_states'):
 			bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
 			states = bn.apply(self.states, training=self.training)
-			nexts = bn.apply(self.nexts, training=self.training)
+			#nexts = bn.apply(self.nexts, training=self.training)
 
-		Q_target = self.rewards + self.are_non_terminal * np.power(self.gamma, self.N) * \
-		           tf.squeeze(self.critic_target(nexts, self.actor_target(nexts)), axis=1)
+		#Q_target = self.rewards + self.are_non_terminal * np.power(self.gamma, self.N) * \
+		#           tf.squeeze(self.critic_target(nexts, self.actor_target(nexts)), axis=1)
+		Q_target = tf.stop_gradient(self.build_Q_target())
 		Q = tf.squeeze(self.critic(states, self.actions), axis=1)
 		self.critic_loss = tf.losses.mean_squared_error(Q_target, Q)
 		self.policy = self.actor(states)
