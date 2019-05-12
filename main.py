@@ -7,6 +7,7 @@ import tensorflow as tf
 
 from algorithms.DDPG import DDPG
 from algorithms.QRDDPG import QRDDPG
+from algorithms.D3PG import D3PG
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 
@@ -20,14 +21,15 @@ def parse_arguments():
 	parser.add_argument('--eval', default=False, action='store_true',
 	                    help='Set this to False when training and True when evaluating.')
 	parser.add_argument('--restore', default=False, action='store_true', help='Restore training')
-	parser.add_argument('--reward-type', default='dense', help='[spase, dense]')
+	parser.add_argument('--reward-type', default='sparse', help='[sparse, dense]')
 	parser.add_argument('--hidden-dims', default=[256, 256], type=list, help='Hidden dimension of network')
 	parser.add_argument('--gamma', default=1.0, type=float, help='Reward discount')
 	parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
 	parser.add_argument('--kappa', default=1.0, type=float, help='Kappa used in quantile Huber loss')
 	parser.add_argument('--n-quantile', default=16, type=int, help='Number of quantile to approximate distribution')
 	parser.add_argument('--actor-lr', default=1e-4, type=float, help='Actor learning rate')
-	parser.add_argument('--critic-lr', default=1e-3, type=float, help='Critic learning rate')
+	parser.add_argument('--critic-lr', default=1e-4, type=float, help='Critic learning rate')
+	parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
 	parser.add_argument('--batch-size', default=256, type=int)
 	parser.add_argument('--step', default=100, type=int, help='Number of gradient descent steps per episode')
 	parser.add_argument('--epsilon', default=0.2, type=float, help='Exploration noise, fixed in D4PG')
@@ -38,9 +40,9 @@ def parse_arguments():
 	parser.add_argument('--n-goals', default=10, type=int, help='Number of goals to sample for HER')
 	parser.add_argument('--C', default=1, type=int, help='Number of episodes to copy critic network to target network')
 	parser.add_argument('--N', default=10, type=int, help='N step returns.')
-	parser.add_argument('--plot-dir', default='plot/', type=str, )
-	parser.add_argument('--model-dir', default='model/', type=str)
-	parser.add_argument('--log-dir', default='log/', type=str)
+	parser.add_argument('--plot-dir', default='plot', type=str, )
+	parser.add_argument('--model-dir', default='model', type=str)
+	parser.add_argument('--log-dir', default='log', type=str)
 	parser.add_argument('--progress-file', default='progress.csv', type=str)
 	parser.add_argument('--device', default=3, type=int, help='GPU device number')
 	return parser.parse_args()
@@ -80,6 +82,11 @@ if __name__ == '__main__':
 			agent = QRDDPG(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
 			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, kappa=args.kappa,
 			               n_quantile=args.n_quantile)
+		elif args.model == 'D3PG':
+			# Need a better way for setting v_min and v_max
+			agent = D3PG(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
+			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, n_atom = args.n_atom,
+						   v_min=-100, v_max=100)
 		else:
 			raise NotImplementedError
 
