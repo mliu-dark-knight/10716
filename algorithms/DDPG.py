@@ -65,8 +65,10 @@ class DDPG(object):
 			states = bn.apply(self.states, training=self.training)
 			nexts = bn.apply(self.nexts, training=self.training)
 
-		Q_target = self.rewards + self.are_non_terminal * np.power(self.gamma, self.N) * \
-		           tf.squeeze(self.critic_target(nexts, self.actor_target(nexts)), axis=1)
+		#Q_target = self.rewards + self.are_non_terminal * np.power(self.gamma, self.N) * \
+		#           tf.squeeze(self.critic_target(nexts, self.actor_target(nexts)), axis=1)
+		Q_target = tf.stop_gradient(self.rewards + self.are_non_terminal * np.power(self.gamma, self.N) * \
+		           tf.squeeze(self.critic_target(nexts, self.actor_target(nexts)), axis=1))
 		Q = tf.squeeze(self.critic(states, self.actions), axis=1)
 		self.critic_loss = tf.losses.mean_squared_error(Q_target, Q)
 		self.policy = self.actor(states)
@@ -125,9 +127,9 @@ class DDPG(object):
 			desired_goals[:T,] = goal
 			rewards = self.env.compute_reward(achieved_goals[:T], desired_goals[:T], None)
 			returns, nexts, are_non_terminal = self.normalize_returns(states[1:T + 1], list(rewards))
-			self.replay_memory.append(list(concat_state_goal(states[:T], desired_goals[:T])),
+			self.replay_memory.append(concat_state_goal(states[:T], desired_goals[:T]),
 			                          actions[:T], returns,
-			                          list(concat_state_goal(nexts, desired_goals[:T])),
+			                          concat_state_goal(nexts, desired_goals[:T]),
 			                          are_non_terminal)
 
 	def collect_trajectory(self, epsilon, apply_her, n_goals):
@@ -135,9 +137,9 @@ class DDPG(object):
 		states, achieved_goals, desired_goals = np.array(states), np.array(achieved_goals), np.array(desired_goals)
 		returns, nexts, are_non_terminal = self.normalize_returns(states[1:], rewards)
 		total_reward = sum(rewards)
-		self.replay_memory.append(list(concat_state_goal(states[:-1], desired_goals)),
+		self.replay_memory.append(concat_state_goal(states[:-1], desired_goals),
 		                          actions, returns,
-		                          list(concat_state_goal(nexts, desired_goals)),
+		                          concat_state_goal(nexts, desired_goals),
 		                          are_non_terminal)
 
 		# hindsight experience
@@ -172,7 +174,7 @@ class DDPG(object):
 			returns -= np.power(self.gamma, self.N) \
 			           * np.pad(returns[self.N:], (0, self.N), 'constant', constant_values=(0))
 
-		return list(returns), nexts, list(are_non_terminal)
+		return returns, nexts, are_non_terminal
 
 	def generate_episode(self, epsilon=0.0, render=False):
 		'''
