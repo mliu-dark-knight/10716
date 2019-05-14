@@ -130,7 +130,6 @@ class Replay_Memory_():
 		self.nexts += nexts
 		self.are_non_terminal += are_non_terminal
 
-
 class Actor(object):
 	def __init__(self, hidden_dims, action_dim, scope):
 		self.hidden_dims = hidden_dims
