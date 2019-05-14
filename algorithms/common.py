@@ -40,7 +40,7 @@ class Replay_Memory():
 		if self.is_full:
 			high = self.memory_size
 		else:
-			high = len(self.states)
+			high = self.cursor
 		indices = np.random.randint(low=0, high=high, size=batch_size)
 		return self.states[indices], \
 		       self.actions[indices], \

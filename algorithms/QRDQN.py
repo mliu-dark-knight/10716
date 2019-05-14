@@ -23,7 +23,7 @@ class QRQNetwork(object):
 				                         kernel_initializer=tf.initializers.variance_scaling())
 			hidden = tf.layers.dense(hidden, self.n_quantile*self.action_dim, activation=None,
 			                       kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3))
-			return tf.reshape(hidden, [tf.shape(states)[0], self.action_dim, self.n_quantile])
+			return tf.reshape(hidden, [-1, self.action_dim, self.n_quantile])
 
 
 class QRDQN(object):
@@ -83,6 +83,8 @@ class QRDQN(object):
 		target_action_indices = tf.concat([batch_indices, target_action], axis=1)
 		target_quantiles = tf.gather_nd(target_network_output,
 										target_action_indices)
+		print_op = tf.print(self.rewards)
+		#with tf.control_dependencies([print_op]):
 		target_Z = tf.expand_dims(self.rewards, axis=1) + tf.expand_dims(self.are_non_terminal, axis=1) * \
 		           np.power(self.gamma, self.N) * target_quantiles
 		
@@ -222,5 +224,5 @@ class QRDQN(object):
 		states.append(state)
 		assert len(states)  == len(actions)+1 and \
 		       len(actions) == len(rewards)
-
+		#print("epi reward: {}".format(rewards))
 		return states, actions, rewards
