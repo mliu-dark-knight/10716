@@ -7,6 +7,7 @@ from tqdm import tqdm
 from algorithms.common import *
 from algorithms.QRDDPG import QRCritic
 from utils import append_summary
+import os
 
 
 class QRQNetwork(object):
@@ -28,11 +29,11 @@ class QRQNetwork(object):
 
 class QRDQN(object):
 
-	def __init__(self, env, hidden_dims, tau=1e-2, kappa=1.0, n_quantile=64, replay_memory=None, gamma=1.0,
-	             lr=1e-3, N=5):
+	def __init__(self, env, hidden_dims=[256, 256], tau=1e-2, kappa=1.0, n_quantile=64, replay_memory=None, gamma=1.0,
+	             lr=1e-3, N=5, scope_pre = ""):
 		self.env = env
 		self.hidden_dims = hidden_dims
-		self.state_dim = reduce(mul, env.observation_space.shape)
+		self.state_dim = reduce(mul,env.observation_space.shape)
 		self.n_action = env.action_space.n
 		self.kappa = kappa
 		self.n_quantile = n_quantile
@@ -41,6 +42,7 @@ class QRDQN(object):
 		self.N = N
 		self.replay_memory = replay_memory
 		self.tau = tau
+		self.scope_pre = scope_pre
 		self.build()
 
 	def build(self):
@@ -52,8 +54,8 @@ class QRDQN(object):
 		self.build_summary()
 
 	def build_network(self):
-		self.qnetwork = QRQNetwork(self.n_action, self.hidden_dims, self.n_quantile, 'qnetwork')
-		self.qnetwork_target = QRQNetwork(self.n_action, self.hidden_dims, self.n_quantile, 'target_qnetwork')
+		self.qnetwork = QRQNetwork(self.n_action, self.hidden_dims, self.n_quantile, self.scope_pre+'qnetwork')
+		self.qnetwork_target = QRQNetwork(self.n_action, self.hidden_dims, self.n_quantile, self.scope_pre+'target_qnetwork')
 
 	def build_placeholder(self):
 		self.states = tf.placeholder(tf.float32, shape=[None, self.state_dim])
@@ -65,11 +67,11 @@ class QRDQN(object):
 
 	def build_copy_op(self):
 		self.init_qnetwork, self.update_qnetwork = get_target_updates(
-			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='qnetwork'),
-			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_qnetwork'), self.tau)
+			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'qnetwork'),
+			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'target_qnetwork'), self.tau)
 
 	def build_loss(self):
-		with tf.variable_scope('normalize_states'):
+		with tf.variable_scope(self.scope_pre+'normalize_states'):
 			bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
 			states = bn.apply(self.states, training=self.training)
 			nexts = bn.apply(self.nexts, training=self.training)
@@ -113,14 +115,14 @@ class QRDQN(object):
 		with tf.control_dependencies([tf.Assert(tf.is_finite(self.loss), [self.loss])]):
 			self.step = optimizer.minimize(
 				self.loss,
-				var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='qnetwork'))
+				var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'qnetwork'))
 
 	def build_summary(self):
 		tf.summary.scalar('loss', self.loss)
 		self.merged_summary_op = tf.summary.merge_all()
 
 	def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
-	          train_episodes=1000, save_episodes=100, epsilon=0.3, apply_her=False, n_goals=10):
+	          train_episodes=1000, save_episodes=100, epsilon=0.3):
 		total_rewards = []
 		sess.run([self.init_qnetwork])
 		for i_episode in tqdm(range(train_episodes), ncols=100):
@@ -226,3 +228,109 @@ class QRDQN(object):
 		       len(actions) == len(rewards)
 		#print("epi reward: {}".format(rewards))
 		return states, actions, rewards
+
+class EnvironmentWrapper(object):
+	def __init__(self, observation_space, action_spcae):
+		self.observation_space = observation_space
+		self.action_space = action_spcae
+
+class MultiagentWrapper(object):
+	def __init__(self, environment, n_agent, agent_params):
+		## only consider QRDQN now
+		self.env = environment
+		self.n_agent = n_agent
+		self.agents = []
+		for i in range(self.n_agent):
+			obs = self.env.observation_space[i]
+			act = self.env.action_space[i]
+			env = EnvironmentWrapper(obs, act)
+			agent = QRDQN(env=env, **agent_params[i])
+			self.agents.append(agent)
+	
+	def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
+	          train_episodes=1000, save_episodes=100, epsilon=0.3):
+		total_rewards = []
+		sess.run([agent.init_qnetwork for agent in self.agents])
+		for i_episode in tqdm(range(train_episodes), ncols=100):
+			cur_epsilon = self.linear_decay_epsilon(i_episode, train_episodes*0.5, epsilon)
+			total_reward = self.collect_trajectory(cur_epsilon)
+			append_summary(progress_fd, str(start_episode + i_episode) + ',{0:.2f}'.format(total_reward))
+			total_rewards.append(total_reward)
+			for agent in self.agents:
+				states, actions, rewards, nexts, are_non_terminal = agent.replay_memory.sample_batch(step * batch_size)
+				for t in range(step):
+					sess.run([agent.step],
+				        feed_dict={agent.states: states[t * batch_size: (t + 1) * batch_size],
+				                    agent.actions: actions[t * batch_size: (t + 1) * batch_size],
+				                    agent.rewards: rewards[t * batch_size: (t + 1) * batch_size],
+				                    agent.nexts: nexts[t * batch_size: (t + 1) * batch_size],
+				                    agent.are_non_terminal: are_non_terminal[t * batch_size: (t + 1) * batch_size],
+				                    agent.training: True})
+				sess.run([agent.update_qnetwork])
+			# summary_writer.add_summary(summary, global_step=self.global_step.eval())
+			if (i_episode + 1) % save_episodes == 0:
+				saver.save(sess, model_path)
+		return total_rewards
+
+	def linear_decay_epsilon(self, step, n_step, epsilon):
+		if step <n_step:
+			return np.linspace(epsilon, 1, n_step)[-step]
+		else:
+			return epsilon
+
+
+	def collect_trajectory(self, epsilon):
+		states, actions, rewards = self.generate_episode(epsilon=epsilon)
+		actions = np.array(actions)
+		rewards = np.array(rewards)
+		for agent_id in range(self.n_agent):
+			agent = self.agents[agent_id]
+			agent_states = np.array(states[agent_id])
+			returns, nexts, are_non_terminal = agent.normalize_returns(agent_states[1:,agent_id], rewards[:, agent_id])
+			agent.replay_memory.append(agent_states[:-1],
+		                          actions[:, agent_id], returns,
+		                          nexts,
+		                          are_non_terminal)
+
+		return rewards[:, 0].sum()
+
+	def generate_episode(self, epsilon=0.0, render=False):
+		'''
+		:param epsilon: exploration noise
+		:return:
+		WARNING: make sure whatever you return comes from the same episode
+		'''
+		states = []
+		actions = []
+		rewards = []
+		state = self.env.reset()
+		for i in range(self.n_agent):
+			states.append([])
+		while True:
+			action = []
+			for i in range(self.n_agent):
+				states[i].append(state[i])
+			for agent_id in range(self.n_agent):
+				agent = self.agents[agent_id]
+				qvalue = self.agents[agent_id].qvalue.eval(feed_dict={
+					agent.states: np.expand_dims(state[agent_id], axis=0),
+					agent.training: False}).squeeze(axis=0)
+				agent_action = np.argmax(qvalue)
+				if np.random.random() < epsilon:
+					agent_action = np.random.randint(low=0, high=agent.n_action)
+				action.append(agent_action)
+			state, reward, done, _ = self.env.step(action)
+			if render:
+				self.env.render()
+			action = np.array(action).reshape((len(action),1))
+			actions.append(action)
+			rewards.append(reward)
+			if done:
+				break
+		for i in range(self.n_agent):
+				states[i].append(state[i])
+		assert len(states[0])  == len(actions)+1 and \
+		       len(actions) == len(rewards)
+		#print("epi reward: {}".format(rewards))
+		return states, actions, rewards
+	
