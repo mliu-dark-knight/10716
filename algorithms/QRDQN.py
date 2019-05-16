@@ -327,7 +327,8 @@ class MultiagentWrapper(object):
 			action = np.array(action).reshape((len(action),1))
 			actions.append(action)
 			rewards.append(reward)
-			if all(done) or step >= 25:
+			if all(done) or step >= max_episode_len:
+				print("Break. Step={}".format(step))
 				break
 		for i in range(self.n_agent):
 				states[i].append(state[i])

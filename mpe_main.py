@@ -114,6 +114,6 @@ if __name__ == '__main__':
             progress_fd.close()
             plot(os.path.join(args.plot_dir, args.model + '_' + args.env), np.array(total_rewards) + 1e-10)
         else:
-            agent.generate_episode(epsilon=0.0,
+            agent_wrapper.generate_episode(epsilon=0.0,
                                    max_episode_len=args.max_episode_len,
                                    render=True)
