@@ -40,7 +40,8 @@ def parse_arguments():
     parser.add_argument('--model-dir', default='model', type=str)
     parser.add_argument('--log-dir', default='log', type=str)
     parser.add_argument('--progress-file', default='progress.csv', type=str)
-    parser.add_argument('--device', default=3, type=int, help='GPU device number')
+    parser.add_argument('--device', default=1, type=int, help='GPU device number')
+    parser.add_argument("--max-episode-len", type=int, default=25, help="maximum episode length")
     return parser.parse_args()
 
 
@@ -109,8 +110,10 @@ if __name__ == '__main__':
             total_rewards = agent_wrapper.train(
                 sess, saver, summary_writer, progress_fd, model_path, batch_size=args.batch_size, step=args.step,
                 train_episodes=args.train_episodes, start_episode=start_episode, save_episodes=args.save_episodes,
-                epsilon=args.epsilon)
+                epsilon=args.epsilon, max_episode_len=args.max_episode_len)
             progress_fd.close()
             plot(os.path.join(args.plot_dir, args.model + '_' + args.env), np.array(total_rewards) + 1e-10)
         else:
-            agent.generate_episode(epsilon=0.0, render=True)
+            agent.generate_episode(epsilon=0.0,
+                                   max_episode_len=args.max_episode_len,
+                                   render=True)

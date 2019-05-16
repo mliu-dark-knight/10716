@@ -248,12 +248,12 @@ class MultiagentWrapper(object):
 			self.agents.append(agent)
 	
 	def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
-	          train_episodes=1000, save_episodes=100, epsilon=0.3):
+	          train_episodes=1000, save_episodes=100, epsilon=0.3, max_episode_len=25):
 		total_rewards = []
 		sess.run([agent.init_qnetwork for agent in self.agents])
 		for i_episode in tqdm(range(train_episodes), ncols=100):
 			cur_epsilon = self.linear_decay_epsilon(i_episode, train_episodes*0.5, epsilon)
-			total_reward = self.collect_trajectory(cur_epsilon)
+			total_reward = self.collect_trajectory(cur_epsilon, max_episode_len)
 			append_summary(progress_fd, str(start_episode + i_episode) + ',{0:.2f}'.format(total_reward))
 			total_rewards.append(total_reward)
 			for agent in self.agents:
@@ -279,14 +279,14 @@ class MultiagentWrapper(object):
 			return epsilon
 
 
-	def collect_trajectory(self, epsilon):
-		states, actions, rewards = self.generate_episode(epsilon=epsilon)
+	def collect_trajectory(self, epsilon, max_episode_len):
+		states, actions, rewards = self.generate_episode(epsilon=epsilon, max_episode_len=max_episode_len)
 		actions = np.array(actions)
 		rewards = np.array(rewards)
 		for agent_id in range(self.n_agent):
 			agent = self.agents[agent_id]
 			agent_states = np.array(states[agent_id])
-			returns, nexts, are_non_terminal = agent.normalize_returns(agent_states[1:,agent_id], rewards[:, agent_id])
+			returns, nexts, are_non_terminal = agent.normalize_returns(agent_states[1:], rewards[:, agent_id])
 			agent.replay_memory.append(agent_states[:-1],
 		                          actions[:, agent_id], returns,
 		                          nexts,
@@ -294,7 +294,7 @@ class MultiagentWrapper(object):
 
 		return rewards[:, 0].sum()
 
-	def generate_episode(self, epsilon=0.0, render=False):
+	def generate_episode(self, epsilon=0.0, render=False, max_episode_len=25):
 		'''
 		:param epsilon: exploration noise
 		:return:
@@ -306,6 +306,7 @@ class MultiagentWrapper(object):
 		state = self.env.reset()
 		for i in range(self.n_agent):
 			states.append([])
+		step = 0
 		while True:
 			action = []
 			for i in range(self.n_agent):
@@ -320,17 +321,16 @@ class MultiagentWrapper(object):
 					agent_action = np.random.randint(low=0, high=agent.n_action)
 				action.append(agent_action)
 			state, reward, done, _ = self.env.step(action)
+			step += 1
 			if render:
 				self.env.render()
 			action = np.array(action).reshape((len(action),1))
 			actions.append(action)
 			rewards.append(reward)
-			if done:
+			if all(done) or step >= 25:
 				break
 		for i in range(self.n_agent):
 				states[i].append(state[i])
 		assert len(states[0])  == len(actions)+1 and \
 		       len(actions) == len(rewards)
-		#print("epi reward: {}".format(rewards))
 		return states, actions, rewards
-	
