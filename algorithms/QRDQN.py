@@ -294,7 +294,8 @@ class MultiagentWrapper(object):
 
 		return rewards[:, 0].sum()
 
-	def generate_episode(self, epsilon=0.0, render=False, max_episode_len=25):
+	def generate_episode(self, epsilon=0.0, render=False,
+						 max_episode_len=25, benchmark=False):
 		'''
 		:param epsilon: exploration noise
 		:return:
@@ -320,7 +321,7 @@ class MultiagentWrapper(object):
 				if np.random.random() < epsilon:
 					agent_action = np.random.randint(low=0, high=agent.n_action)
 				action.append(agent_action)
-			state, reward, done, _ = self.env.step(action)
+			state, reward, done, info = self.env.step(action)
 			step += 1
 			if render:
 				self.env.render()
@@ -328,10 +329,13 @@ class MultiagentWrapper(object):
 			actions.append(action)
 			rewards.append(reward)
 			if all(done) or step >= max_episode_len:
-				print("Break. Step={}".format(step))
+				#print("Break. Step={}".format(step))
 				break
 		for i in range(self.n_agent):
 				states[i].append(state[i])
 		assert len(states[0])  == len(actions)+1 and \
 		       len(actions) == len(rewards)
-		return states, actions, rewards
+		if not benchmark:
+			return states, actions, rewards
+		else:
+			return states, actions, rewards, info
