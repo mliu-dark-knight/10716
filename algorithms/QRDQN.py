@@ -85,8 +85,6 @@ class QRDQN(object):
 		target_action_indices = tf.concat([batch_indices, target_action], axis=1)
 		target_quantiles = tf.gather_nd(target_network_output,
 										target_action_indices)
-		print_op = tf.print(self.rewards)
-		#with tf.control_dependencies([print_op]):
 		target_Z = tf.expand_dims(self.rewards, axis=1) + tf.expand_dims(self.are_non_terminal, axis=1) * \
 		           np.power(self.gamma, self.N) * target_quantiles
 		
@@ -211,9 +209,6 @@ class QRDQN(object):
 				self.states: np.expand_dims(state, axis=0),
 				self.training: False}).squeeze(axis=0)
 			action = np.argmax(qvalue)
-			#print("qvalues: {}".format(qvalue))
-			#print("action: {}".format(action))
-			#print("epsilon:{}".format(epsilon))
 			if np.random.random() < epsilon:
 				action = np.random.randint(low=0, high=self.n_action)
 			state, reward, done, _ = self.env.step(action)
@@ -226,7 +221,6 @@ class QRDQN(object):
 		states.append(state)
 		assert len(states)  == len(actions)+1 and \
 		       len(actions) == len(rewards)
-		#print("epi reward: {}".format(rewards))
 		return states, actions, rewards
 
 class EnvironmentWrapper(object):
