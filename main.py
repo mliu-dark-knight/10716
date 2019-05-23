@@ -9,7 +9,8 @@ from algorithms.DDPG import DDPG
 from algorithms.QRDDPG import QRDDPG
 from algorithms.D3PG import D3PG
 from algorithms.QRDQN import QRDQN
-from algorithms.SoftQRDDPG import SoftQRDDPG
+from algorithms.QRA2C import QRA2C
+from algorithms.A2C import A2C
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 
@@ -95,10 +96,13 @@ if __name__ == '__main__':
 		elif args.model == 'QRDQN':
 			agent = QRDQN(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
 			lr=args.actor_lr, tau=args.tau, N=args.N, kappa=args.kappa,n_quantile=args.n_quantile)
-		elif args.model == 'SoftQRDDPG':
-			agent = SoftQRDDPG(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
+		elif args.model == 'QRA2C':
+			agent = QRA2C(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
 			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, kappa=args.kappa,
 			               n_quantile=args.n_quantile)
+		elif args.model == 'A2C':
+			agent = A2C(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
+			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N)
 		else:
 			raise NotImplementedError
 

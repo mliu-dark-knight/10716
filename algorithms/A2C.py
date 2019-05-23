@@ -1,22 +1,52 @@
 from functools import reduce
 from operator import mul
-from .QRDQN import QRQNetwork
 from typing import *
 from tqdm import tqdm
 import numpy as np
+import tensorflow as tf
 from algorithms.common import *
 from utils import append_summary
 
-class SoftQRDDPG(object):
-    def __init__(self, env, hidden_dims, temperature=1, kappa=1.0, n_quantile=64, replay_memory=None, gamma=1.0, tau=1e-2,
+class Actor_(object):
+	def __init__(self, hidden_dims, action_dim, scope):
+		self.hidden_dims = hidden_dims
+		self.action_dim = action_dim
+		self.scope = scope
+
+	def __call__(self, states):
+		with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
+			hidden = states
+			for hidden_dim in self.hidden_dims:
+				hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
+				                         kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',
+																							 mode='fan_avg'))
+			return tf.layers.dense(hidden, self.action_dim, activation=None,
+			                       kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',
+																							 mode='fan_avg'))
+
+class VNetwork(object):
+	def __init__(self, hidden_dims, scope):
+		self.hidden_dims = hidden_dims
+		self.scope = scope
+	def __call__(self, states):
+		with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
+			hidden = states
+			for hidden_dim in self.hidden_dims:
+				hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
+				                         kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',
+																							 mode='fan_avg'))
+			hidden = tf.layers.dense(hidden, 1, activation=None,
+			                       kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',
+																							 mode='fan_avg'))
+			return hidden
+
+class A2C(object):
+    def __init__(self, env, hidden_dims, replay_memory=None, gamma=1.0, tau=1e-2,
                  actor_lr=1e-3, critic_lr=1e-3, N=5, scope_pre = ""):
         self.env = env
-        self.temperature = temperature
         self.hidden_dims = hidden_dims
         self.state_dim = reduce(mul,env.observation_space.shape)
         self.n_action = env.action_space.n
-        self.kappa = kappa
-        self.n_quantile = n_quantile
         self.gamma = gamma
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
@@ -35,9 +65,9 @@ class SoftQRDDPG(object):
         self.build_summary()
     
     def build_actor_critic(self):
-        self.actor = Actor(self.hidden_dims, self.n_action, self.scope_pre+'actor')
-        self.critic = QRQNetwork(self.n_action, self.hidden_dims, self.n_quantile, self.scope_pre+'critic')
-        self.critic_target = QRQNetwork(self.n_action, self.hidden_dims, self.n_quantile, self.scope_pre+'target_critic')
+        self.actor = Actor_(self.hidden_dims, self.n_action, self.scope_pre+'actor')
+        self.critic = VNetwork(self.hidden_dims, self.scope_pre+'critic')
+        self.critic_target = VNetwork(self.hidden_dims, self.scope_pre+'target_critic')
 
     def build_placeholder(self):
         self.states = tf.placeholder(tf.float32, shape=[None, self.state_dim])
@@ -48,10 +78,6 @@ class SoftQRDDPG(object):
         self.training = tf.placeholder(tf.bool)
     
     def build_copy_op(self):
-        #self.init_actor, self.update_actor = get_target_updates(
-        #    tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'actor'),
-        #    tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'actor'), self.tau)
-
         self.init_critic, self.update_critic = get_target_updates(
             tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'critic'),
             tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'target_critic'), self.tau)
@@ -63,40 +89,19 @@ class SoftQRDDPG(object):
             nexts = bn.apply(self.nexts, training=self.training)
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
-        
-        target_network_output = self.critic_target(nexts)
-        target_qvalue = tf.reduce_mean(target_network_output, axis=2)
-        target_action = tf.cast(tf.argmax(target_qvalue, axis=1)[:, None],
-                                dtype=tf.int32)
-        target_action_indices = tf.concat([batch_indices, target_action], axis=1)
-        target_quantiles = tf.gather_nd(target_network_output,
-                                        target_action_indices)
-        target_Z = self.rewards[:,None]+self.are_non_terminal[:, None] * \
-                   np.power(self.gamma, self.N) * target_quantiles
-        
-        self.network_output = self.critic(states) 
-        self.qvalue = tf.reduce_mean(self.network_output, axis=2) 
+        target_value = tf.stop_gradient(self.rewards[:, None]+self.are_non_terminal[:, None] * \
+                   np.power(self.gamma, self.N) * self.critic_target(nexts))
+        value = self.critic(states)
+        self.critic_loss = tf.reduce_mean((value-target_value)**2)
+        self.logits = self.actor(states)
+        self.pi = tf.nn.softmax(self.logits, axis=-1)
+        log_pi = tf.log(self.pi+1e-9)
         action_indices = tf.concat([batch_indices, self.actions], axis=1)
-        Z = tf.gather_nd(self.network_output, action_indices)
-        bellman_errors = tf.expand_dims(target_Z, axis=2) - tf.expand_dims(Z, axis=1)
-        huber_loss_case_one = tf.to_float(tf.abs(bellman_errors) <= self.kappa) * 0.5 * bellman_errors ** 2
-        huber_loss_case_two = tf.to_float(tf.abs(bellman_errors) > self.kappa) * self.kappa * \
-                              (tf.abs(bellman_errors) - 0.5 * self.kappa)
-        huber_loss = huber_loss_case_one + huber_loss_case_two
-        quantiles = tf.expand_dims(tf.expand_dims(tf.range(0.5 / self.n_quantile, 1., 1. / self.n_quantile), axis=0),
-                                   axis=1)
-        quantile_huber_loss = (tf.abs(quantiles - tf.stop_gradient(tf.to_float(bellman_errors < 0))) * huber_loss) / \
-                              self.kappa
-        self.critic_loss = tf.reduce_mean(tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=2), axis=1), axis=0)
-        self.logits = self.compute_logits(states)
-        log_pi = tf.nn.log_softmax(self.logits, axis=-1)
-        self.actor_loss = -tf.reduce_mean(tf.gather_nd(self.qvalue, action_indices)*tf.gather_nd(log_pi, action_indices))
-
-
-    def compute_logits(self, states):
-        logits = tf.nn.log_softmax(self.actor(states))
-        u = tf.random_uniform(tf.shape(logits))
-        return (logits - tf.log(-tf.log(u)))/self.temperature
+        log_action_prob = tf.gather_nd(log_pi, action_indices)
+        EA = tf.stop_gradient(self.rewards
+                              +tf.reduce_mean(self.critic(nexts), axis=1)
+                              -tf.reduce_mean(self.critic(states), axis=1))
+        self.actor_loss = -tf.reduce_mean(EA*log_action_prob)
 
     def build_step(self):
         self.global_step = tf.Variable(0, trainable=False)
@@ -137,6 +142,8 @@ class SoftQRDDPG(object):
                 sess.run([self.actor_step],
                          feed_dict={self.states: states[t * batch_size: (t + 1) * batch_size],
                                     self.actions: actions[t * batch_size: (t + 1) * batch_size],
+                                    self.rewards: rewards[t * batch_size: (t + 1) * batch_size],
+                                    self.nexts: nexts[t * batch_size: (t + 1) * batch_size],
                                     self.training: True})
                 sess.run([self.update_critic])
             # summary_writer.add_summary(summary, global_step=self.global_step.eval())
@@ -197,11 +204,9 @@ class SoftQRDDPG(object):
         state = self.env.reset()
         while True:
             states.append(state)
-            logits = self.logits.eval(feed_dict={
+            pi = self.pi.eval(feed_dict={
                 self.states: np.expand_dims(state, axis=0),
                 self.training: False}).squeeze(axis=0)
-            pi = np.exp(logits)
-            pi /= pi.sum()
             
             action = np.random.choice(np.arange(self.n_action), size=None, replace=True, p=pi)
             state, reward, done, _ = self.env.step(action)
