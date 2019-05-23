@@ -61,9 +61,15 @@ class Replay_Memory():
 			action_shape = len(actions[0])
 			self.states = np.zeros((self.memory_size, state_shape))
 			self.actions = np.zeros((self.memory_size, action_shape))
-			self.rewards = np.zeros(self.memory_size)
+			if len(rewards.shape) == 1:
+				self.rewards = np.zeros(self.memory_size)
+			else:
+				self.rewards = np.zeros((self.memory_size, len(rewards[0])))
 			self.nexts = np.zeros((self.memory_size, state_shape))
-			self.are_non_terminal = np.zeros(self.memory_size)
+			if len(are_non_terminal.shape) == 1:
+				self.are_non_terminal = np.zeros(self.memory_size)
+			else:
+				self.are_non_terminal = np.zeros((self.memory_size, len(are_non_terminal[0])))
 			self.cursor = 0
 		
 		states = np.array(states)

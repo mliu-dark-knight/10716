@@ -5,6 +5,7 @@ import tensorflow as tf
 from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
 from algorithms.QRDQN import QRDQN, MultiagentWrapper
+from algorithms.MultiSoftQRDDPG import MultiSoftQRDDPG
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 
@@ -13,12 +14,12 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', default='simple_tag', type=str,
                         help='[simple_tag]')
-    parser.add_argument('--model', default='QRDQN', type=str, help='[QRDQN]')
+    parser.add_argument('--model', default='QRDQN', type=str, help='[QRDQN, MultiSoftQRDDPG]')
     parser.add_argument('--eval', default=False, action='store_true',
                         help='Set this to False when training and True when evaluating.')
     parser.add_argument('--restore', default=False, action='store_true', help='Restore training')
     parser.add_argument('--reward-type', default='sparse', help='[sparse, dense]')
-    parser.add_argument('--hidden-dims', default=[256, 256], type=int, nargs='+', help='Hidden dimension of network')
+    parser.add_argument('--hidden-dims', default=[64, 64], type=int, nargs='+', help='Hidden dimension of network')
     parser.add_argument('--gamma', default=1.0, type=float, help='Reward discount')
     parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
     parser.add_argument('--kappa', default=1.0, type=float, help='Kappa used in quantile Huber loss')
@@ -71,13 +72,14 @@ if __name__ == '__main__':
     n_agent = len(environment.agents)
     tf.reset_default_graph()
     with tf.device(device):
-        agent_params = []
-        for a in range(n_agent):
-            if args.eval:
-                replay_memory = None
-            else:
-                replay_memory = Replay_Memory(memory_size=args.memory_size)
-            agent_params.append(dict(hidden_dims=args.hidden_dims,
+        if args.model == "QRDQN":
+            agent_params = []
+            for a in range(n_agent):
+                if args.eval:
+                    replay_memory = None
+                else:
+                    replay_memory = Replay_Memory(memory_size=args.memory_size)
+                agent_params.append(dict(hidden_dims=args.hidden_dims,
                                      replay_memory=replay_memory,
                                      gamma=args.gamma,
                                      lr=args.actor_lr,
@@ -86,7 +88,19 @@ if __name__ == '__main__':
                                      kappa=args.kappa,
                                      n_quantile=args.n_quantile,
                                      scope_pre="agent{}_".format(a)))
-        agent_wrapper = MultiagentWrapper(environment, n_agent, agent_params)
+            agent = MultiagentWrapper(environment, n_agent, agent_params)
+        elif args.model == "MultiSoftQRDDPG":
+            if args.eval:
+                replay_memory = None
+            else:
+                replay_memory = Replay_Memory(memory_size=args.memory_size)
+            agent = MultiSoftQRDDPG(environment, hidden_dims=args.hidden_dims,
+                                    kappa=args.kappa,
+                                    n_quantile=args.n_quantile,
+                                    replay_memory=replay_memory,
+                                    gamma=args.gamma, tau=args.tau,
+                                    actor_lr=args.actor_lr,
+                                    critic_lr=args.critic_lr, N=args.N)
     gpu_ops = tf.GPUOptions(per_process_gpu_memory_fraction=0.25, allow_growth=True)
     config = tf.ConfigProto(gpu_options=gpu_ops, allow_soft_placement=True)
     saver = tf.train.Saver()
@@ -107,13 +121,13 @@ if __name__ == '__main__':
             start_episode = 0
             tf.global_variables_initializer().run()
         if not args.eval:
-            total_rewards = agent_wrapper.train(
+            total_rewards = agent.train(
                 sess, saver, summary_writer, progress_fd, model_path, batch_size=args.batch_size, step=args.step,
                 train_episodes=args.train_episodes, start_episode=start_episode, save_episodes=args.save_episodes,
                 epsilon=args.epsilon, max_episode_len=args.max_episode_len)
             progress_fd.close()
             plot(os.path.join(args.plot_dir, args.model + '_' + args.env), np.array(total_rewards) + 1e-10)
         else:
-            agent_wrapper.generate_episode(epsilon=0.0,
+            agent.generate_episode(epsilon=0.0,
                                    max_episode_len=args.max_episode_len,
                                    render=True)

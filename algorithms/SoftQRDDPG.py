@@ -36,7 +36,6 @@ class SoftQRDDPG(object):
     
     def build_actor_critic(self):
         self.actor = Actor(self.hidden_dims, self.n_action, self.scope_pre+'actor')
-        self.actor_target = Actor(self.hidden_dims, self.n_action, self.scope_pre+'target_actor')
         self.critic = QRQNetwork(self.n_action, self.hidden_dims, self.n_quantile, self.scope_pre+'critic')
         self.critic_target = QRQNetwork(self.n_action, self.hidden_dims, self.n_quantile, self.scope_pre+'target_critic')
 
