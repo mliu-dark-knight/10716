@@ -1,34 +1,16 @@
 from functools import reduce
 from operator import mul
-from .QRDQN import QRQNetwork
 from typing import *
 from tqdm import tqdm
 import numpy as np
 from algorithms.common import *
+from algorithms.QRA2C import QRVNetwork, Actor_
 from utils import append_summary
 
-class CentralizedQRQNetwork(object):
-    def __init__(self, action_dim, hidden_dims, n_quantile, scope):
-        self.action_dim = action_dim
-        self.hidden_dims = hidden_dims
-        self.n_quantile = n_quantile
-        self.scope = scope
-    def __call__(self, states):
-        with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
-            hidden = states
-            for hidden_dim in self.hidden_dims:
-                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
-                                         kernel_initializer=tf.initializers.variance_scaling())
-            hidden = tf.layers.dense(hidden, self.n_quantile*reduce(mul, self.action_dim), activation=None,
-                                   kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3))
-            return tf.reshape(hidden, [-1, reduce(mul, self.action_dim), self.n_quantile])
-
-
-class MultiSoftQRDDPG(object):
-    def __init__(self, env, hidden_dims, temperature=1, kappa=1.0, n_quantile=64, replay_memory=None, gamma=1.0, tau=1e-2,
+class MQRA2C(object):
+    def __init__(self, env, hidden_dims, kappa=1.0, n_quantile=64, replay_memory=None, gamma=1.0, tau=1e-2,
                  actor_lr=1e-3, critic_lr=1e-3, N=5):
         self.env = env
-        self.temperature = temperature
         self.hidden_dims = hidden_dims
         self.action_dim = []
         self.state_dim = []
@@ -56,6 +38,7 @@ class MultiSoftQRDDPG(object):
         self.update_critic_list =[]
         self.critic_step_list = []
         self.logits_list = []
+        self.pi_list = []
         self.build()
         
     def build(self):
@@ -68,9 +51,9 @@ class MultiSoftQRDDPG(object):
     
     def build_actor_critic(self):
         for i in range(self.n_agent):
-            self.actor_list.append(Actor(self.hidden_dims, self.action_dim[i], 'actor_{}'.format(i)))
-            self.critic_list.append(CentralizedQRQNetwork(self.action_dim, self.hidden_dims, self.n_quantile, 'critic_{}'.format(i)))
-            self.critic_target_list.append(CentralizedQRQNetwork(self.action_dim, self.hidden_dims, self.n_quantile, 'critic_target_{}'.format(i)))
+            self.actor_list.append(Actor_(self.hidden_dims, self.action_dim[i], 'actor_{}'.format(i)))
+            self.critic_list.append(QRVNetwork(self.hidden_dims, self.n_quantile, 'critic_{}'.format(i)))
+            self.critic_target_list.append(QRVNetwork(self.hidden_dims, self.n_quantile, 'critic_target_{}'.format(i)))
 
     def build_placeholder(self):
         self.states = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)], name="states")
@@ -88,28 +71,6 @@ class MultiSoftQRDDPG(object):
             self.update_critic_list.append(update_critic)
             self.init_critic_list.append(init_critic)
 
-    def action_encoding(self, actions):
-        base = [1]
-        for i in range(1, self.n_agent):
-            base.append(int(base[-1]*self.action_dim[i-1]))
-        base = base[::-1]
-        
-        encoded = tf.cast(actions[0]*base[0], dtype=tf.int32)
-        for j in range(1, self.n_agent):
-            encoded += tf.cast(actions[j]*base[j], dtype=tf.int32)
-        return encoded
-
-    def action_decoding(self, encoded, agent_id):
-        base = [1]
-        for i in range(1, self.n_agent):
-            base.append(base[-1]*self.action_dim[i-1])
-        base = base[::-1]
-        actions = []
-        for j in range(self.n_agent):
-            action = tf.cast(tf.floor(encoded / base[j]), dtype=tf.int32)
-            encoded = encoded % base[j]
-            actions.append(action)
-
     def build_loss(self):
         with tf.variable_scope('normalize_states'):
             bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
@@ -117,35 +78,10 @@ class MultiSoftQRDDPG(object):
             nexts = bn.apply(self.nexts, training=self.training)
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size, dtype=tf.int32)[:, None]
-        for i in range(self.n_agent):
-            target_network_output = self.critic_target_list[i](nexts)
-            target_action_qvalue_all = tf.reduce_mean(target_network_output, axis=-1)
-            action_list = [self.actions[:,j] for j in range(self.n_agent)]
-            action_qvalue_list = []
-            for action_id in range(self.action_dim[i]):
-                this_action = tf.zeros(batch_size)+action_id
-                action_list[i] = this_action
-                encoded = self.action_encoding(action_list)[:, None]
-                indices = tf.concat([batch_indices, encoded], axis=1)
-                action_qvalue = tf.gather_nd(target_action_qvalue_all,
-                                indices)[:, None]
-                action_qvalue_list.append(action_qvalue)
-            action_qvalue = tf.concat(action_qvalue_list, axis=1)
-            target_action = tf.cast(tf.argmax(action_qvalue, axis=1)[:, None],
-                                                                dtype=tf.int32)
-            target_action_indices = tf.concat([batch_indices, target_action],
-                                               axis=1)          
-            target_quantiles = tf.gather_nd(target_network_output,
-                                        target_action_indices)
-            target_Z = self.rewards[:,i][:, None]+self.are_non_terminal[:, i][:, None] * \
-                   np.power(self.gamma, self.N) * target_quantiles            
-            network_output = self.critic_list[i](states)
-            action_list = [self.actions[:,j] for j in range(self.n_agent)]
-            encoded = self.action_encoding(action_list)[:, None]
-            action_indices = tf.concat([batch_indices, encoded], axis=1)
-            Z = tf.gather_nd(network_output, action_indices)
-            qvalue = tf.reduce_mean(Z, axis=-1)
-            
+        for agent_id in range(self.n_agent):
+            target_Z = tf.stop_gradient(self.rewards[:, agent_id][:, None]+self.are_non_terminal[:, agent_id][:, None] * \
+                   np.power(self.gamma, self.N) * self.critic_target_list[agent_id](nexts))          
+            Z = self.critic_list[agent_id](states)
             bellman_errors = tf.expand_dims(target_Z, axis=2) - tf.expand_dims(Z, axis=1)
             huber_loss_case_one = tf.to_float(tf.abs(bellman_errors) <= self.kappa) * 0.5 * bellman_errors ** 2
             huber_loss_case_two = tf.to_float(tf.abs(bellman_errors) > self.kappa) * self.kappa * \
@@ -157,12 +93,18 @@ class MultiSoftQRDDPG(object):
                               self.kappa
             self.critic_loss_list.append(tf.reduce_mean(tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=2), axis=1), axis=0))
             
-            agent_states = states[:, sum(self.state_dim[:i]):sum(self.state_dim[:i+1])]
-            logits = tf.nn.log_softmax(self.actor_list[i](agent_states))
-            self.logits_list.append(logits-tf.log(-tf.log(tf.random_uniform(tf.shape(logits)))))
-            log_pi = tf.nn.log_softmax(self.logits_list[i], axis=-1)
-            action_indices = tf.concat([batch_indices, self.actions[:, i][:, None]], axis=1)
-            self.actor_loss_list.append(-tf.reduce_mean(qvalue*tf.gather_nd(log_pi, action_indices)))
+            agent_states = states[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
+            agent_nexts = nexts[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
+            self.logits_list.append(self.actor_list[agent_id](agent_states))
+            pi = tf.nn.softmax(self.logits_list[agent_id], axis=-1)
+            self.pi_list.append(pi)
+            log_pi = tf.log(pi+1e-9)
+            action_indices = tf.concat([batch_indices, self.actions[:, agent_id][:, None]], axis=1)
+            log_action_prob = tf.gather_nd(log_pi, action_indices)
+            EA = tf.stop_gradient(self.rewards[:, agent_id]
+                              +tf.reduce_mean(self.critic_list[agent_id](nexts), axis=1)
+                              -tf.reduce_mean(self.critic_list[agent_id](states), axis=1))
+            self.actor_loss_list.append(-tf.reduce_mean(EA*log_action_prob))
 
     def build_step(self):
         self.global_step = tf.Variable(0, trainable=False)
@@ -209,8 +151,8 @@ class MultiSoftQRDDPG(object):
                          feed_dict={self.states: states[t * batch_size: (t + 1) * batch_size],
                                     self.actions: actions[t * batch_size: (t + 1) * batch_size],
                                     self.nexts: nexts[t * batch_size: (t + 1) * batch_size],
-                                    self.rewards: rewards[t * batch_size: (t + 1) * batch_size],
                                     self.are_non_terminal: are_non_terminal[t * batch_size: (t + 1) * batch_size],
+                                    self.rewards: rewards[t * batch_size: (t + 1) * batch_size],
                                     self.training: True})
                 sess.run(self.update_critic_list)
             # summary_writer.add_summary(summary, global_step=self.global_step.eval())
@@ -280,12 +222,9 @@ class MultiSoftQRDDPG(object):
             states.append(state)
             action = []
             for i in range(self.n_agent):
-                logits = self.logits_list[i].eval(feed_dict={
+                pi = self.pi_list[i].eval(feed_dict={
                 self.states: np.expand_dims(state, axis=0),
-                self.training: False})
-                logits = logits.squeeze(axis=0)
-                pi = np.exp(logits)
-                pi /= pi.sum()
+                self.training: False}).squeeze(axis=0)
                 action.append(np.random.choice(np.arange(self.action_dim[i]), size=None, replace=True, p=pi))
             state, reward, done, info = self.env.step(action)
             state = np.concatenate([j.reshape(1,-1) for j in state], axis=1).flatten()

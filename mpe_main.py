@@ -5,7 +5,7 @@ import tensorflow as tf
 from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
 from algorithms.QRDQN import QRDQN, MultiagentWrapper
-from algorithms.MultiSoftQRDDPG import MultiSoftQRDDPG
+from algorithms.MQRA2C import MQRA2C
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 
@@ -14,18 +14,18 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', default='simple_tag', type=str,
                         help='[simple_tag]')
-    parser.add_argument('--model', default='QRDQN', type=str, help='[QRDQN, MultiSoftQRDDPG]')
+    parser.add_argument('--model', default='QRDQN', type=str, help='[QRDQN, MQRA2C]')
     parser.add_argument('--eval', default=False, action='store_true',
                         help='Set this to False when training and True when evaluating.')
     parser.add_argument('--restore', default=False, action='store_true', help='Restore training')
     parser.add_argument('--reward-type', default='sparse', help='[sparse, dense]')
     parser.add_argument('--hidden-dims', default=[64, 64], type=int, nargs='+', help='Hidden dimension of network')
-    parser.add_argument('--gamma', default=1.0, type=float, help='Reward discount')
+    parser.add_argument('--gamma', default=0.99, type=float, help='Reward discount')
     parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
     parser.add_argument('--kappa', default=1.0, type=float, help='Kappa used in quantile Huber loss')
     parser.add_argument('--n-quantile', default=32, type=int, help='Number of quantile to approximate distribution')
-    parser.add_argument('--actor-lr', default=1e-4, type=float, help='Actor learning rate')
-    parser.add_argument('--critic-lr', default=1e-4, type=float, help='Critic learning rate')
+    parser.add_argument('--actor-lr', default=2e-4, type=float, help='Actor learning rate')
+    parser.add_argument('--critic-lr', default=2e-4, type=float, help='Critic learning rate')
     parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
     parser.add_argument('--batch-size', default=256, type=int)
     parser.add_argument('--step', default=100, type=int, help='Number of gradient descent steps per episode')
@@ -36,7 +36,7 @@ def parse_arguments():
     parser.add_argument('--apply-her', default=False, action='store_true', help='Use HER or not')
     parser.add_argument('--n-goals', default=10, type=int, help='Number of goals to sample for HER')
     parser.add_argument('--C', default=1, type=int, help='Number of episodes to copy critic network to target network')
-    parser.add_argument('--N', default=10, type=int, help='N step returns.')
+    parser.add_argument('--N', default=1, type=int, help='N step returns.')
     parser.add_argument('--plot-dir', default='plot', type=str, )
     parser.add_argument('--model-dir', default='model', type=str)
     parser.add_argument('--log-dir', default='log', type=str)
@@ -89,12 +89,12 @@ if __name__ == '__main__':
                                      n_quantile=args.n_quantile,
                                      scope_pre="agent{}_".format(a)))
             agent = MultiagentWrapper(environment, n_agent, agent_params)
-        elif args.model == "MultiSoftQRDDPG":
+        elif args.model == "MQRA2C":
             if args.eval:
                 replay_memory = None
             else:
                 replay_memory = Replay_Memory(memory_size=args.memory_size)
-            agent = MultiSoftQRDDPG(environment, hidden_dims=args.hidden_dims,
+            agent = MQRA2C(environment, hidden_dims=args.hidden_dims,
                                     kappa=args.kappa,
                                     n_quantile=args.n_quantile,
                                     replay_memory=replay_memory,

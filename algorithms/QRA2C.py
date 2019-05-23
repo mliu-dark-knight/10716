@@ -1,11 +1,11 @@
 from functools import reduce
 from operator import mul
 from typing import *
-from .A2C import A2C, Actor_
 from tqdm import tqdm
 import numpy as np
 import tensorflow as tf
 from algorithms.common import *
+from algorithms.A2C import A2C, Actor_
 from utils import append_summary
 
 class QRVNetwork(object):

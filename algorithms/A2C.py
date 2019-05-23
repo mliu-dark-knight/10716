@@ -28,6 +28,7 @@ class VNetwork(object):
 	def __init__(self, hidden_dims, scope):
 		self.hidden_dims = hidden_dims
 		self.scope = scope
+        
 	def __call__(self, states):
 		with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
 			hidden = states
