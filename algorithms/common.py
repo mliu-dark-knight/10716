@@ -77,23 +77,18 @@ class Replay_Memory():
 		rewards = np.array(rewards)
 		nexts = np.array(nexts)
 		are_non_terminal = np.array(are_non_terminal)
-		if self.cursor+n_sample > self.memory_size:
+		if self.cursor+n_sample >= self.memory_size:
 			amount = self.memory_size - self.cursor
 			if not self.is_full:
 				self.is_full = True
 		else:
 			amount = n_sample
-		#print("amount: {}".format(amount))
-		#print("cursor: {}".format(self.cursor))
-		#print("n_sample: {}".format(n_sample))
 		self.states[self.cursor:self.cursor+amount] = states[:amount]
 		self.actions[self.cursor:self.cursor+amount] = actions[:amount]
 		self.rewards[self.cursor:self.cursor+amount] = rewards[:amount]
 		self.nexts[self.cursor:self.cursor+amount] = nexts[:amount]
 		self.are_non_terminal[self.cursor:self.cursor+amount] = are_non_terminal[:amount]
-		self.cursor = self.cursor+amount
-		if self.cursor >= self.memory_size:
-			self.cursor = 0
+		self.cursor = (self.cursor+amount)%self.memory_size
 		if amount < n_sample:
 			remain = n_sample - amount
 			self.states[self.cursor:self.cursor+remain] = states[amount:]
