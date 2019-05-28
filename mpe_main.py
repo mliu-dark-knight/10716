@@ -23,18 +23,15 @@ def parse_arguments():
     parser.add_argument('--gamma', default=0.99, type=float, help='Reward discount')
     parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
     parser.add_argument('--kappa', default=1.0, type=float, help='Kappa used in quantile Huber loss')
-    parser.add_argument('--n-quantile', default=32, type=int, help='Number of quantile to approximate distribution')
+    parser.add_argument('--n-quantile', default=64, type=int, help='Number of quantile to approximate distribution')
     parser.add_argument('--actor-lr', default=2e-4, type=float, help='Actor learning rate')
     parser.add_argument('--critic-lr', default=2e-4, type=float, help='Critic learning rate')
     parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
     parser.add_argument('--batch-size', default=256, type=int)
     parser.add_argument('--step', default=100, type=int, help='Number of gradient descent steps per episode')
-    parser.add_argument('--epsilon', default=0.2, type=float, help='Exploration noise, fixed in D4PG')
     parser.add_argument('--train-episodes', default=100, type=int, help='Number of episodes to train')
     parser.add_argument('--save-episodes', default=100, type=int, help='Number of episodes to save model')
     parser.add_argument('--memory-size', default=1000000, type=int, help='Size of replay memory')
-    parser.add_argument('--apply-her', default=False, action='store_true', help='Use HER or not')
-    parser.add_argument('--n-goals', default=10, type=int, help='Number of goals to sample for HER')
     parser.add_argument('--C', default=1, type=int, help='Number of episodes to copy critic network to target network')
     parser.add_argument('--N', default=1, type=int, help='N step returns.')
     parser.add_argument('--plot-dir', default='plot', type=str, )
@@ -124,7 +121,7 @@ if __name__ == '__main__':
             total_rewards = agent.train(
                 sess, saver, summary_writer, progress_fd, model_path, batch_size=args.batch_size, step=args.step,
                 train_episodes=args.train_episodes, start_episode=start_episode, save_episodes=args.save_episodes,
-                epsilon=args.epsilon, max_episode_len=args.max_episode_len)
+                max_episode_len=args.max_episode_len)
             progress_fd.close()
             plot(os.path.join(args.plot_dir, args.model + '_' + args.env), np.array(total_rewards) + 1e-10)
         else:

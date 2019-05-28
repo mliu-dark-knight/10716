@@ -26,6 +26,11 @@ class QRVNetwork(object):
             return hidden
 
 class QRA2C(A2C):
+    '''
+    Implement off-policy A2C algorithm.
+    Critic is trained with quantile regression algorithm.
+    Advantage is estimated as V(next)-V(current)+reward.
+    '''
     def __init__(self, *args, kappa=1.0, n_quantile=64, **kwargs):
         self.kappa = kappa
         self.n_quantile = n_quantile
@@ -39,8 +44,9 @@ class QRA2C(A2C):
     def build_loss(self):
         with tf.variable_scope(self.scope_pre+'normalize_states'):
             bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
-            states = bn.apply(self.states, training=self.training)
-            nexts = bn.apply(self.nexts, training=self.training)
+            states = bn.apply(self.states[:, :-1], training=self.training)
+            nexts = bn.apply(self.nexts[:, :-1], training=self.training)
+        prob = self.states[:, -1]
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
         
@@ -61,7 +67,7 @@ class QRA2C(A2C):
         self.pi = tf.nn.softmax(self.logits, axis=-1)
         log_pi = tf.log(self.pi+1e-9)
         action_indices = tf.concat([batch_indices, self.actions], axis=1)
-        log_action_prob = tf.gather_nd(log_pi, action_indices)
+        log_action_prob = tf.gather_nd(log_pi, action_indices)/prob
         EA = tf.stop_gradient(self.rewards
                               +tf.reduce_mean(self.critic(nexts), axis=1)
                               -tf.reduce_mean(self.critic(states), axis=1))

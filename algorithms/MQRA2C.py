@@ -6,8 +6,13 @@ import numpy as np
 from algorithms.common import *
 from algorithms.QRA2C import QRVNetwork, Actor_
 from utils import append_summary
+import collections
 
 class MQRA2C(object):
+	'''
+	Multi-agent version of QRA2C.
+	State is defined to be concantenation of four consecutive observation of all agents.
+	'''
     def __init__(self, env, hidden_dims, kappa=1.0, n_quantile=64, replay_memory=None, gamma=1.0, tau=1e-2,
                  actor_lr=1e-3, critic_lr=1e-3, N=5):
         self.env = env
@@ -56,10 +61,10 @@ class MQRA2C(object):
             self.critic_target_list.append(QRVNetwork(self.hidden_dims, self.n_quantile, 'critic_target_{}'.format(i)))
 
     def build_placeholder(self):
-        self.states = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)], name="states")
+        self.states = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)*4+self.n_agent], name="states")
         self.actions = tf.placeholder(tf.int32, shape=[None,self.n_agent], name="actions")
         self.rewards = tf.placeholder(tf.float32, shape=[None, self.n_agent], name="rewards")
-        self.nexts = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)], name="nexts")
+        self.nexts = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)*4+self.n_agent], name="nexts")
         self.are_non_terminal = tf.placeholder(tf.float32, shape=[None, self.n_agent], name="are_non_terminal")
         self.training = tf.placeholder(tf.bool)
     
@@ -74,10 +79,11 @@ class MQRA2C(object):
     def build_loss(self):
         with tf.variable_scope('normalize_states'):
             bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
-            states = bn.apply(self.states, training=self.training)
-            nexts = bn.apply(self.nexts, training=self.training)
+            states = bn.apply(self.states[:, :-self.n_agent], training=self.training)
+            nexts = bn.apply(self.states[:, :-self.n_agent], training=self.training)
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size, dtype=tf.int32)[:, None]
+        prob = self.states[:, -self.n_agent:]
         for agent_id in range(self.n_agent):
             target_Z = tf.stop_gradient(self.rewards[:, agent_id][:, None]+self.are_non_terminal[:, agent_id][:, None] * \
                    np.power(self.gamma, self.N) * self.critic_target_list[agent_id](nexts))          
@@ -94,13 +100,13 @@ class MQRA2C(object):
             self.critic_loss_list.append(tf.reduce_mean(tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=2), axis=1), axis=0))
             
             agent_states = states[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
-            agent_nexts = nexts[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
+            
             self.logits_list.append(self.actor_list[agent_id](agent_states))
             pi = tf.nn.softmax(self.logits_list[agent_id], axis=-1)
             self.pi_list.append(pi)
             log_pi = tf.log(pi+1e-9)
             action_indices = tf.concat([batch_indices, self.actions[:, agent_id][:, None]], axis=1)
-            log_action_prob = tf.gather_nd(log_pi, action_indices)
+            log_action_prob = tf.gather_nd(log_pi, action_indices) / prob[:, agent_id]
             EA = tf.stop_gradient(self.rewards[:, agent_id]
                               +tf.reduce_mean(self.critic_list[agent_id](nexts), axis=1)
                               -tf.reduce_mean(self.critic_list[agent_id](states), axis=1))
@@ -216,18 +222,27 @@ class MQRA2C(object):
         actions = []
         rewards = []
         state = self.env.reset()
+        state_queue = collections.deque([], maxlen=4)
         state = np.concatenate([j.reshape(1,-1) for j in state], axis=1).flatten()
+        for i in range(4):
+        	state_queue.append(state)
         step = 0
         while True:
-            states.append(state)
+            state_input = np.concatenate([j.reshape(1, -1) for j in state_queue]).reshape(1,-1)    
             action = []
+            prob = []
             for i in range(self.n_agent):
                 pi = self.pi_list[i].eval(feed_dict={
-                self.states: np.expand_dims(state, axis=0),
+                self.states: np.concatenate([state_input, np.zeros((1, self.n_agent))], axis=1),
                 self.training: False}).squeeze(axis=0)
-                action.append(np.random.choice(np.arange(self.action_dim[i]), size=None, replace=True, p=pi))
+                a = np.random.choice(np.arange(self.action_dim[i]), size=None, replace=True, p=pi)
+                action.append(a)
+                prob.append(pi[a])
+            state_input = np.concatenate([state_input, np.array(prob).reshape(1, -1)], axis=1)
+            states.append(state_input.flatten())
             state, reward, done, info = self.env.step(action)
             state = np.concatenate([j.reshape(1,-1) for j in state], axis=1).flatten()
+            state_queue.append(state)
             if render:
                 self.env.render()
             actions.append(action)
@@ -236,7 +251,20 @@ class MQRA2C(object):
             if all(done) or step >= max_episode_len:
                 #print("Break. Step={}".format(step))
                 break
-        states.append(state)
+        
+        state_input = np.concatenate([j.reshape(1, -1) for j in state_queue]).reshape(1,-1)    
+        action = []
+        prob = []
+        for i in range(self.n_agent):
+            pi = self.pi_list[i].eval(feed_dict={
+            self.states: np.concatenate([state_input, np.zeros((1, self.n_agent))], axis=1),
+            self.training: False}).squeeze(axis=0)
+            a = np.random.choice(np.arange(self.action_dim[i]), size=None, replace=True, p=pi)
+            action.append(a)
+            prob.append(pi[a])
+        state_input = np.concatenate([state_input, np.array(prob).reshape(1, -1)], axis=1)
+        states.append(state_input.flatten())
+
         assert len(states)  == len(actions)+1 and \
                len(actions) == len(rewards)
         if not benchmark:

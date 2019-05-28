@@ -42,6 +42,10 @@ class VNetwork(object):
 			return hidden
 
 class A2C(object):
+    '''
+    Implement off-policy A2C algorithm.
+    Advantage is estimated as V(next)-V(current)+reward.
+    '''
     def __init__(self, env, hidden_dims, replay_memory=None, gamma=1.0, tau=1e-2,
                  actor_lr=1e-3, critic_lr=1e-3, N=5, scope_pre = ""):
         self.env = env
@@ -71,10 +75,10 @@ class A2C(object):
         self.critic_target = VNetwork(self.hidden_dims, self.scope_pre+'target_critic')
 
     def build_placeholder(self):
-        self.states = tf.placeholder(tf.float32, shape=[None, self.state_dim])
+        self.states = tf.placeholder(tf.float32, shape=[None, self.state_dim+1])
         self.actions = tf.placeholder(tf.int32, shape=[None,1])
         self.rewards = tf.placeholder(tf.float32, shape=[None])
-        self.nexts = tf.placeholder(tf.float32, shape=[None, self.state_dim])
+        self.nexts = tf.placeholder(tf.float32, shape=[None, self.state_dim+1])
         self.are_non_terminal = tf.placeholder(tf.float32, shape=[None])
         self.training = tf.placeholder(tf.bool)
     
@@ -86,8 +90,9 @@ class A2C(object):
     def build_loss(self):
         with tf.variable_scope(self.scope_pre+'normalize_states'):
             bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
-            states = bn.apply(self.states, training=self.training)
-            nexts = bn.apply(self.nexts, training=self.training)
+            states = bn.apply(self.states[:, :-1], training=self.training)
+            nexts = bn.apply(self.nexts[:, :-1], training=self.training)
+        prob = self.states[:, -1]
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
         target_value = tf.stop_gradient(self.rewards[:, None]+self.are_non_terminal[:, None] * \
@@ -98,7 +103,7 @@ class A2C(object):
         self.pi = tf.nn.softmax(self.logits, axis=-1)
         log_pi = tf.log(self.pi+1e-9)
         action_indices = tf.concat([batch_indices, self.actions], axis=1)
-        log_action_prob = tf.gather_nd(log_pi, action_indices)
+        log_action_prob = tf.gather_nd(log_pi, action_indices)/prob
         EA = tf.stop_gradient(self.rewards
                               +tf.reduce_mean(self.critic(nexts), axis=1)
                               -tf.reduce_mean(self.critic(states), axis=1))
@@ -202,22 +207,30 @@ class A2C(object):
         states = []
         actions = []
         rewards = []
-        state = self.env.reset()
+        state = self.env.reset().reshape(1, -1)
         while True:
-            states.append(state)
             pi = self.pi.eval(feed_dict={
-                self.states: np.expand_dims(state, axis=0),
-                self.training: False}).squeeze(axis=0)
-            
+                self.states: np.concatenate([state, np.zeros((1,1))], axis=1),
+                self.training: False}).squeeze(axis=0)      
             action = np.random.choice(np.arange(self.n_action), size=None, replace=True, p=pi)
+            prob = pi[action]
+            states.append(np.concatenate([state, np.array([prob]).reshape(1,-1)], axis=1).flatten())
             state, reward, done, _ = self.env.step(action)
+            state = state.reshape(1, -1)
             if render:
                 self.env.render()
             actions.append([action])
             rewards.append(reward)
             if done:
                 break
-        states.append(state)
+        pi = self.pi.eval(feed_dict={
+                self.states: np.concatenate([state, np.zeros((1,1))], axis=1),
+                self.training: False}).squeeze(axis=0)      
+        action = np.random.choice(np.arange(self.n_action), size=None, replace=True, p=pi)
+        prob = pi[action]
+        states.append(np.concatenate([state, np.array([prob]).reshape(1,-1)], axis=1).flatten())
+
+
         assert len(states)  == len(actions)+1 and \
                len(actions) == len(rewards)
         return states, actions, rewards
