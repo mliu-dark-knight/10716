@@ -9,10 +9,7 @@ from utils import append_summary
 import collections
 
 class MQRA2C(object):
-	'''
-	Multi-agent version of QRA2C.
-	State is defined to be concantenation of four consecutive observation of all agents.
-	'''
+    '''Multi-agent version of QRA2C.State is defined to be concantenation of four consecutive observation of all agents.'''
     def __init__(self, env, hidden_dims, kappa=1.0, n_quantile=64, replay_memory=None, gamma=1.0, tau=1e-2,
                  actor_lr=1e-3, critic_lr=1e-3, N=5):
         self.env = env
@@ -61,11 +58,11 @@ class MQRA2C(object):
             self.critic_target_list.append(QRVNetwork(self.hidden_dims, self.n_quantile, 'critic_target_{}'.format(i)))
 
     def build_placeholder(self):
-        self.states = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)*4+self.n_agent], name="states")
-        self.actions = tf.placeholder(tf.int32, shape=[None,self.n_agent], name="actions")
-        self.rewards = tf.placeholder(tf.float32, shape=[None, self.n_agent], name="rewards")
-        self.nexts = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)*4+self.n_agent], name="nexts")
-        self.are_non_terminal = tf.placeholder(tf.float32, shape=[None, self.n_agent], name="are_non_terminal")
+        self.states = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)*4+self.n_agent])
+        self.actions = tf.placeholder(tf.int32, shape=[None,self.n_agent])
+        self.rewards = tf.placeholder(tf.float32, shape=[None, self.n_agent])
+        self.nexts = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)*4+self.n_agent])
+        self.are_non_terminal = tf.placeholder(tf.float32, shape=[None, self.n_agent])
         self.training = tf.placeholder(tf.bool)
     
     def build_copy_op(self):
@@ -225,7 +222,7 @@ class MQRA2C(object):
         state_queue = collections.deque([], maxlen=4)
         state = np.concatenate([j.reshape(1,-1) for j in state], axis=1).flatten()
         for i in range(4):
-        	state_queue.append(state)
+            state_queue.append(state)
         step = 0
         while True:
             state_input = np.concatenate([j.reshape(1, -1) for j in state_queue]).reshape(1,-1)    
