@@ -8,6 +8,9 @@ import tensorflow as tf
 from algorithms.DDPG import DDPG
 from algorithms.QRDDPG import QRDDPG
 from algorithms.D3PG import D3PG
+from algorithms.QRDQN import QRDQN
+from algorithms.QRA2C import QRA2C
+from algorithms.A2C import A2C
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 
@@ -22,11 +25,11 @@ def parse_arguments():
 	                    help='Set this to False when training and True when evaluating.')
 	parser.add_argument('--restore', default=False, action='store_true', help='Restore training')
 	parser.add_argument('--reward-type', default='sparse', help='[sparse, dense]')
-	parser.add_argument('--hidden-dims', default=[256, 256], type=list, help='Hidden dimension of network')
+	parser.add_argument('--hidden-dims', default=[256, 256], type=int, nargs='+', help='Hidden dimension of network')
 	parser.add_argument('--gamma', default=1.0, type=float, help='Reward discount')
 	parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
 	parser.add_argument('--kappa', default=1.0, type=float, help='Kappa used in quantile Huber loss')
-	parser.add_argument('--n-quantile', default=16, type=int, help='Number of quantile to approximate distribution')
+	parser.add_argument('--n-quantile', default=32, type=int, help='Number of quantile to approximate distribution')
 	parser.add_argument('--actor-lr', default=1e-4, type=float, help='Actor learning rate')
 	parser.add_argument('--critic-lr', default=1e-4, type=float, help='Critic learning rate')
 	parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
@@ -36,7 +39,7 @@ def parse_arguments():
 	parser.add_argument('--train-episodes', default=100, type=int, help='Number of episodes to train')
 	parser.add_argument('--save-episodes', default=100, type=int, help='Number of episodes to save model')
 	parser.add_argument('--memory-size', default=1000000, type=int, help='Size of replay memory')
-	parser.add_argument('--apply-her', default=True, action='store_true', help='Use HER or not')
+	parser.add_argument('--apply-her', default=False, action='store_true', help='Use HER or not')
 	parser.add_argument('--n-goals', default=10, type=int, help='Number of goals to sample for HER')
 	parser.add_argument('--C', default=1, type=int, help='Number of episodes to copy critic network to target network')
 	parser.add_argument('--N', default=10, type=int, help='N step returns.')
@@ -66,8 +69,11 @@ if __name__ == '__main__':
 		device = '/gpu:0'
 	else:
 		device = '/cpu:0'
-
-	environment = gym.make(args.env, reward_type=args.reward_type)
+	if args.env in ['FetchReach-v1', 'FetchSlide-v1', 'FetchPush-v1', 'FetchPickAndPlace-v1',
+	                         'HandReach-v0', 'HandManipulateBlock-v0', 'HandManipulateEgg-v0', 'HandManipulatePen-v0']:
+		environment = gym.make(args.env, reward_type=args.reward_type)
+	else:
+		environment = gym.make(args.env)
 
 	tf.reset_default_graph()
 	with tf.device(device):
@@ -87,6 +93,16 @@ if __name__ == '__main__':
 			agent = D3PG(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
 			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, n_atom = args.n_atom,
 						   v_min=-100, v_max=100)
+		elif args.model == 'QRDQN':
+			agent = QRDQN(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
+			lr=args.actor_lr, tau=args.tau, N=args.N, kappa=args.kappa,n_quantile=args.n_quantile)
+		elif args.model == 'QRA2C':
+			agent = QRA2C(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
+			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, kappa=args.kappa,
+			               n_quantile=args.n_quantile)
+		elif args.model == 'A2C':
+			agent = A2C(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
+			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N)
 		else:
 			raise NotImplementedError
 

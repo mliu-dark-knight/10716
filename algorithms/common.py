@@ -40,7 +40,7 @@ class Replay_Memory():
 		if self.is_full:
 			high = self.memory_size
 		else:
-			high = len(self.states)
+			high = self.cursor
 		indices = np.random.randint(low=0, high=high, size=batch_size)
 		return self.states[indices], \
 		       self.actions[indices], \
@@ -61,9 +61,15 @@ class Replay_Memory():
 			action_shape = len(actions[0])
 			self.states = np.zeros((self.memory_size, state_shape))
 			self.actions = np.zeros((self.memory_size, action_shape))
-			self.rewards = np.zeros(self.memory_size)
+			if len(rewards.shape) == 1:
+				self.rewards = np.zeros(self.memory_size)
+			else:
+				self.rewards = np.zeros((self.memory_size, len(rewards[0])))
 			self.nexts = np.zeros((self.memory_size, state_shape))
-			self.are_non_terminal = np.zeros(self.memory_size)
+			if len(are_non_terminal.shape) == 1:
+				self.are_non_terminal = np.zeros(self.memory_size)
+			else:
+				self.are_non_terminal = np.zeros((self.memory_size, len(are_non_terminal[0])))
 			self.cursor = 0
 		
 		states = np.array(states)
@@ -71,23 +77,18 @@ class Replay_Memory():
 		rewards = np.array(rewards)
 		nexts = np.array(nexts)
 		are_non_terminal = np.array(are_non_terminal)
-		if self.cursor+n_sample > self.memory_size:
+		if self.cursor+n_sample >= self.memory_size:
 			amount = self.memory_size - self.cursor
 			if not self.is_full:
 				self.is_full = True
 		else:
 			amount = n_sample
-		#print("amount: {}".format(amount))
-		#print("cursor: {}".format(self.cursor))
-		#print("n_sample: {}".format(n_sample))
 		self.states[self.cursor:self.cursor+amount] = states[:amount]
 		self.actions[self.cursor:self.cursor+amount] = actions[:amount]
 		self.rewards[self.cursor:self.cursor+amount] = rewards[:amount]
 		self.nexts[self.cursor:self.cursor+amount] = nexts[:amount]
 		self.are_non_terminal[self.cursor:self.cursor+amount] = are_non_terminal[:amount]
-		self.cursor = self.cursor+amount
-		if self.cursor >= self.memory_size:
-			self.cursor = 0
+		self.cursor = (self.cursor+amount)%self.memory_size
 		if amount < n_sample:
 			remain = n_sample - amount
 			self.states[self.cursor:self.cursor+remain] = states[amount:]
@@ -129,7 +130,6 @@ class Replay_Memory_():
 		self.rewards += rewards
 		self.nexts += nexts
 		self.are_non_terminal += are_non_terminal
-
 
 class Actor(object):
 	def __init__(self, hidden_dims, action_dim, scope):
