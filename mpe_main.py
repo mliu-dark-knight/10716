@@ -27,7 +27,7 @@ def parse_arguments():
     parser.add_argument('--actor-lr', default=2e-4, type=float, help='Actor learning rate')
     parser.add_argument('--critic-lr', default=2e-4, type=float, help='Critic learning rate')
     parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
-    parser.add_argument('--batch-size', default=256, type=int)
+    parser.add_argument('--batch-size', default=1024, type=int)
     parser.add_argument('--step', default=100, type=int, help='Number of gradient descent steps per episode')
     parser.add_argument('--train-episodes', default=100, type=int, help='Number of episodes to train')
     parser.add_argument('--save-episodes', default=100, type=int, help='Number of episodes to save model')
@@ -125,6 +125,5 @@ if __name__ == '__main__':
             progress_fd.close()
             plot(os.path.join(args.plot_dir, args.model + '_' + args.env), np.array(total_rewards) + 1e-10)
         else:
-            agent.generate_episode(epsilon=0.0,
-                                   max_episode_len=args.max_episode_len,
+            agent.generate_episode(max_episode_len=args.max_episode_len,
                                    render=True)

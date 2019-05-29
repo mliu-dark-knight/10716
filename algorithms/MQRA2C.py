@@ -97,17 +97,19 @@ class MQRA2C(object):
             self.critic_loss_list.append(tf.reduce_mean(tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=2), axis=1), axis=0))
             
             agent_states = states[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
-            
+            EA = tf.stop_gradient(self.rewards[:, agent_id]
+                              +self.gamma*tf.reduce_mean(self.critic_list[agent_id](nexts), axis=1)
+                              -tf.reduce_mean(self.critic_list[agent_id](states), axis=1))
+
             self.logits_list.append(self.actor_list[agent_id](agent_states))
             pi = tf.nn.softmax(self.logits_list[agent_id], axis=-1)
             self.pi_list.append(pi)
             log_pi = tf.log(pi+1e-9)
             action_indices = tf.concat([batch_indices, self.actions[:, agent_id][:, None]], axis=1)
-            log_action_prob = tf.gather_nd(log_pi, action_indices) / prob[:, agent_id]
-            EA = tf.stop_gradient(self.rewards[:, agent_id]
-                              +tf.reduce_mean(self.critic_list[agent_id](nexts), axis=1)
-                              -tf.reduce_mean(self.critic_list[agent_id](states), axis=1))
-            self.actor_loss_list.append(-tf.reduce_mean(EA*log_action_prob))
+            log_action_prob = tf.gather_nd(log_pi, action_indices) / prob[:, agent_id]     
+            pg_loss = -tf.reduce_mean(EA*log_action_prob)
+            entropy_loss = -0.01*tf.reduce_mean(log_pi*pi)
+            self.actor_loss_list.append(pg_loss-entropy_loss)
 
     def build_step(self):
         self.global_step = tf.Variable(0, trainable=False)

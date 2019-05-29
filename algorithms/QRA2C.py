@@ -69,6 +69,6 @@ class QRA2C(A2C):
         action_indices = tf.concat([batch_indices, self.actions], axis=1)
         log_action_prob = tf.gather_nd(log_pi, action_indices)/prob
         EA = tf.stop_gradient(self.rewards
-                              +tf.reduce_mean(self.critic(nexts), axis=1)
+                              +self.gamma*tf.reduce_mean(self.critic(nexts), axis=1)
                               -tf.reduce_mean(self.critic(states), axis=1))
         self.actor_loss = -tf.reduce_mean(EA*log_action_prob)
