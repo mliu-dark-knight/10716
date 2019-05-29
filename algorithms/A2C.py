@@ -56,7 +56,6 @@ class A2C(object):
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
         self.N = N
-        self.replay_memory = replay_memory
         self.tau = tau
         self.scope_pre = scope_pre
         self.build()
@@ -75,10 +74,10 @@ class A2C(object):
         self.critic_target = VNetwork(self.hidden_dims, self.scope_pre+'target_critic')
 
     def build_placeholder(self):
-        self.states = tf.placeholder(tf.float32, shape=[None, self.state_dim+1])
+        self.states = tf.placeholder(tf.float32, shape=[None, self.state_dim])
         self.actions = tf.placeholder(tf.int32, shape=[None,1])
         self.rewards = tf.placeholder(tf.float32, shape=[None])
-        self.nexts = tf.placeholder(tf.float32, shape=[None, self.state_dim+1])
+        self.nexts = tf.placeholder(tf.float32, shape=[None, self.state_dim])
         self.are_non_terminal = tf.placeholder(tf.float32, shape=[None])
         self.training = tf.placeholder(tf.bool)
     
@@ -88,26 +87,27 @@ class A2C(object):
             tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'target_critic'), self.tau)
 
     def build_loss(self):
-        with tf.variable_scope(self.scope_pre+'normalize_states'):
-            bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
-            states = bn.apply(self.states[:, :-1], training=self.training)
-            nexts = bn.apply(self.nexts[:, :-1], training=self.training)
-        prob = self.states[:, -1]
+        #with tf.variable_scope(self.scope_pre+'normalize_states'):
+        #    bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
+        #    states = bn.apply(self.states, training=self.training)
+        #    nexts = bn.apply(self.nexts, training=self.training)
+        states = self.states
+        nexts = self.nexts
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
         target_value = tf.stop_gradient(self.rewards[:, None]+self.are_non_terminal[:, None] * \
                    np.power(self.gamma, self.N) * self.critic_target(nexts))
         value = self.critic(states)
-        self.critic_loss = tf.reduce_mean((value-target_value)**2)
+        self.critic_loss = tf.losses.mean_squared_error(value, target_value)
         self.logits = self.actor(states)
         self.pi = tf.nn.softmax(self.logits, axis=-1)
-        log_pi = tf.log(self.pi+1e-9)
+        log_pi = tf.log(self.pi)
         action_indices = tf.concat([batch_indices, self.actions], axis=1)
-        log_action_prob = tf.gather_nd(log_pi, action_indices)/prob
-        EA = tf.stop_gradient(self.rewards
-                              +self.gamma*tf.reduce_mean(self.critic(nexts), axis=1)
-                              -tf.reduce_mean(self.critic(states), axis=1))
-        self.actor_loss = -tf.reduce_mean(EA*log_action_prob)
+        log_action_prob = tf.gather_nd(log_pi, action_indices)[:, None]
+        advantage = target_value-value
+        pg_loss = advantage*log_action_prob
+        #entropy_loss = -0.01*self.pi*log_pi
+        self.actor_loss = -tf.reduce_mean(pg_loss)
 
     def build_step(self):
         self.global_step = tf.Variable(0, trainable=False)
@@ -133,25 +133,24 @@ class A2C(object):
         total_rewards = []
         sess.run([self.init_critic])
         for i_episode in tqdm(range(train_episodes), ncols=100):
-            total_reward = self.collect_trajectory()
+            states, actions, returns, nexts, are_non_terminal, total_reward = self.collect_trajectory()
             append_summary(progress_fd, str(start_episode + i_episode) + ',{0:.2f}'.format(total_reward))
             total_rewards.append(total_reward)
-            states, actions, rewards, nexts, are_non_terminal = self.replay_memory.sample_batch(step * batch_size)
-            for t in range(step):
-                sess.run([self.critic_step],
-                         feed_dict={self.states: states[t * batch_size: (t + 1) * batch_size],
-                                    self.actions: actions[t * batch_size: (t + 1) * batch_size],
-                                    self.rewards: rewards[t * batch_size: (t + 1) * batch_size],
-                                    self.nexts: nexts[t * batch_size: (t + 1) * batch_size],
-                                    self.are_non_terminal: are_non_terminal[t * batch_size: (t + 1) * batch_size],
-                                    self.training: True})
-                sess.run([self.actor_step],
-                         feed_dict={self.states: states[t * batch_size: (t + 1) * batch_size],
-                                    self.actions: actions[t * batch_size: (t + 1) * batch_size],
-                                    self.rewards: rewards[t * batch_size: (t + 1) * batch_size],
-                                    self.nexts: nexts[t * batch_size: (t + 1) * batch_size],
-                                    self.training: True})
-                sess.run([self.update_critic])
+            sess.run([self.critic_step],
+                     feed_dict={self.states: states,
+                                self.actions: actions,
+                                self.rewards: returns,
+                                self.nexts: nexts,
+                                self.are_non_terminal: are_non_terminal,
+                                self.training: True})
+            sess.run([self.actor_step],
+                     feed_dict={self.states: states,
+                                self.actions: actions,
+                                self.rewards: returns,
+                                self.nexts: nexts,
+                                self.are_non_terminal: are_non_terminal,
+                                self.training: True})
+            sess.run([self.update_critic])
             # summary_writer.add_summary(summary, global_step=self.global_step.eval())
             if (i_episode + 1) % save_episodes == 0:
                 saver.save(sess, model_path)
@@ -189,47 +188,31 @@ class A2C(object):
     def collect_trajectory(self):
         states, actions, rewards = self.generate_episode()
         states = np.array(states)
-        returns, nexts, are_non_terminal = self.normalize_returns(states[1:], rewards)
+        returns, nexts, are_non_terminal = self.normalize_returns(states[1:],
+                                                                  rewards)
         total_reward = sum(rewards)
-        self.replay_memory.append(states[:-1],
-                                  actions, returns,
-                                  nexts,
-                                  are_non_terminal)
-
-        return total_reward
+        return states[:-1], actions, returns, nexts, are_non_terminal, total_reward
     
     def generate_episode(self, render=False):
-        '''
-        :param epsilon: exploration noise
-        :return:
-        WARNING: make sure whatever you return comes from the same episode
-        '''
         states = []
         actions = []
         rewards = []
-        state = self.env.reset().reshape(1, -1)
+        state = self.env.reset()
         while True:
             pi = self.pi.eval(feed_dict={
-                self.states: np.concatenate([state, np.zeros((1,1))], axis=1),
+                self.states: np.array(state).reshape(1,-1),
                 self.training: False}).squeeze(axis=0)      
-            action = np.random.choice(np.arange(self.n_action), size=None, replace=True, p=pi)
-            prob = pi[action]
-            states.append(np.concatenate([state, np.array([prob]).reshape(1,-1)], axis=1).flatten())
+            action = np.random.choice(np.arange(self.n_action), size=None,
+                                      replace=True, p=pi)
+            states.append(state)
             state, reward, done, _ = self.env.step(action)
-            state = state.reshape(1, -1)
             if render:
                 self.env.render()
             actions.append([action])
             rewards.append(reward)
             if done:
                 break
-        pi = self.pi.eval(feed_dict={
-                self.states: np.concatenate([state, np.zeros((1,1))], axis=1),
-                self.training: False}).squeeze(axis=0)      
-        action = np.random.choice(np.arange(self.n_action), size=None, replace=True, p=pi)
-        prob = pi[action]
-        states.append(np.concatenate([state, np.array([prob]).reshape(1,-1)], axis=1).flatten())
-
+        states.append(state)
 
         assert len(states)  == len(actions)+1 and \
                len(actions) == len(rewards)

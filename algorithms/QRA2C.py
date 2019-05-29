@@ -42,14 +42,14 @@ class QRA2C(A2C):
         self.critic_target = QRVNetwork(self.hidden_dims, self.n_quantile, self.scope_pre+'target_critic')
 
     def build_loss(self):
-        with tf.variable_scope(self.scope_pre+'normalize_states'):
-            bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
-            states = bn.apply(self.states[:, :-1], training=self.training)
-            nexts = bn.apply(self.nexts[:, :-1], training=self.training)
-        prob = self.states[:, -1]
+        #with tf.variable_scope(self.scope_pre+'normalize_states'):
+        #    bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
+        #    states = bn.apply(self.states, training=self.training)
+        #    nexts = bn.apply(self.nexts, training=self.training)
+        states = self.states
+        nexts = self.nexts
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
-        
         target_Z = tf.stop_gradient(self.rewards[:,None]+self.are_non_terminal[:, None] * \
                    np.power(self.gamma, self.N) * self.critic_target(nexts))
         Z = self.critic(states)
@@ -65,10 +65,10 @@ class QRA2C(A2C):
         self.critic_loss = tf.reduce_mean(tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=2), axis=1), axis=0)
         self.logits = self.actor(states)
         self.pi = tf.nn.softmax(self.logits, axis=-1)
-        log_pi = tf.log(self.pi+1e-9)
+        log_pi = tf.log(self.pi)
         action_indices = tf.concat([batch_indices, self.actions], axis=1)
-        log_action_prob = tf.gather_nd(log_pi, action_indices)/prob
-        EA = tf.stop_gradient(self.rewards
-                              +self.gamma*tf.reduce_mean(self.critic(nexts), axis=1)
-                              -tf.reduce_mean(self.critic(states), axis=1))
-        self.actor_loss = -tf.reduce_mean(EA*log_action_prob)
+        log_action_prob = tf.gather_nd(log_pi, action_indices)[:, None]
+        advantage = tf.stop_gradient(tf.reduce_mean(target_Z, axis=1)
+                              -tf.reduce_mean(Z, axis=1))
+        pg_loss = advantage*log_action_prob
+        self.actor_loss = -tf.reduce_mean(pg_loss)

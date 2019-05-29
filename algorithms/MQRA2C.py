@@ -104,7 +104,7 @@ class MQRA2C(object):
             self.logits_list.append(self.actor_list[agent_id](agent_states))
             pi = tf.nn.softmax(self.logits_list[agent_id], axis=-1)
             self.pi_list.append(pi)
-            log_pi = tf.log(pi+1e-9)
+            log_pi = tf.log(pi)
             action_indices = tf.concat([batch_indices, self.actions[:, agent_id][:, None]], axis=1)
             log_action_prob = tf.gather_nd(log_pi, action_indices) / prob[:, agent_id]     
             pg_loss = -tf.reduce_mean(EA*log_action_prob)
