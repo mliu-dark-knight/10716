@@ -39,19 +39,14 @@ class QRA2C(A2C):
     def build_actor_critic(self):
         self.actor = Actor_(self.hidden_dims, self.n_action, self.scope_pre+'actor')
         self.critic = QRVNetwork(self.hidden_dims, self.n_quantile, self.scope_pre+'critic')
-        self.critic_target = QRVNetwork(self.hidden_dims, self.n_quantile, self.scope_pre+'target_critic')
 
     def build_loss(self):
-        #with tf.variable_scope(self.scope_pre+'normalize_states'):
-        #    bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
-        #    states = bn.apply(self.states, training=self.training)
-        #    nexts = bn.apply(self.nexts, training=self.training)
         states = self.states
         nexts = self.nexts
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
         target_Z = tf.stop_gradient(self.rewards[:,None]+self.are_non_terminal[:, None] * \
-                   np.power(self.gamma, self.N) * self.critic_target(nexts))
+                   np.power(self.gamma, self.N) * self.critic(nexts))
         Z = self.critic(states)
         bellman_errors = tf.expand_dims(target_Z, axis=2) - tf.expand_dims(Z, axis=1)
         huber_loss_case_one = tf.to_float(tf.abs(bellman_errors) <= self.kappa) * 0.5 * bellman_errors ** 2
@@ -63,6 +58,7 @@ class QRA2C(A2C):
         quantile_huber_loss = (tf.abs(quantiles - tf.stop_gradient(tf.to_float(bellman_errors < 0))) * huber_loss) / \
                               self.kappa
         self.critic_loss = tf.reduce_mean(tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=2), axis=1), axis=0)
+
         self.logits = self.actor(states)
         self.pi = tf.nn.softmax(self.logits, axis=-1)
         log_pi = tf.log(self.pi)

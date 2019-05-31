@@ -25,7 +25,7 @@ def parse_arguments():
 	                    help='Set this to False when training and True when evaluating.')
 	parser.add_argument('--restore', default=False, action='store_true', help='Restore training')
 	parser.add_argument('--reward-type', default='sparse', help='[sparse, dense]')
-	parser.add_argument('--hidden-dims', default=[64, 64], type=int, nargs='+', help='Hidden dimension of network')
+	parser.add_argument('--hidden-dims', default=[256, 256], type=int, nargs='+', help='Hidden dimension of network')
 	parser.add_argument('--gamma', default=0.99, type=float, help='Reward discount')
 	parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
 	parser.add_argument('--kappa', default=1.0, type=float, help='Kappa used in quantile Huber loss')

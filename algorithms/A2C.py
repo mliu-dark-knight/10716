@@ -64,14 +64,12 @@ class A2C(object):
         self.build_actor_critic()
         self.build_placeholder()
         self.build_loss()
-        self.build_copy_op()
         self.build_step()
         self.build_summary()
     
     def build_actor_critic(self):
         self.actor = Actor_(self.hidden_dims, self.n_action, self.scope_pre+'actor')
         self.critic = VNetwork(self.hidden_dims, self.scope_pre+'critic')
-        self.critic_target = VNetwork(self.hidden_dims, self.scope_pre+'target_critic')
 
     def build_placeholder(self):
         self.states = tf.placeholder(tf.float32, shape=[None, self.state_dim])
@@ -81,22 +79,13 @@ class A2C(object):
         self.are_non_terminal = tf.placeholder(tf.float32, shape=[None])
         self.training = tf.placeholder(tf.bool)
     
-    def build_copy_op(self):
-        self.init_critic, self.update_critic = get_target_updates(
-            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'critic'),
-            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'target_critic'), self.tau)
-
     def build_loss(self):
-        #with tf.variable_scope(self.scope_pre+'normalize_states'):
-        #    bn = tf.layers.BatchNormalization(_reuse=tf.AUTO_REUSE)
-        #    states = bn.apply(self.states, training=self.training)
-        #    nexts = bn.apply(self.nexts, training=self.training)
         states = self.states
         nexts = self.nexts
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
         target_value = tf.stop_gradient(self.rewards[:, None]+self.are_non_terminal[:, None] * \
-                   np.power(self.gamma, self.N) * self.critic_target(nexts))
+                   np.power(self.gamma, self.N) * self.critic(nexts))
         value = self.critic(states)
         self.critic_loss = tf.losses.mean_squared_error(value, target_value)
         self.logits = self.actor(states)
@@ -104,9 +93,8 @@ class A2C(object):
         log_pi = tf.log(self.pi)
         action_indices = tf.concat([batch_indices, self.actions], axis=1)
         log_action_prob = tf.gather_nd(log_pi, action_indices)[:, None]
-        advantage = target_value-value
+        advantage = tf.stop_gradient(target_value-value)
         pg_loss = advantage*log_action_prob
-        #entropy_loss = -0.01*self.pi*log_pi
         self.actor_loss = -tf.reduce_mean(pg_loss)
 
     def build_step(self):
@@ -131,11 +119,11 @@ class A2C(object):
     def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
               train_episodes=1000, save_episodes=100, epsilon=0.3, apply_her=False, n_goals=10):
         total_rewards = []
-        sess.run([self.init_critic])
         for i_episode in tqdm(range(train_episodes), ncols=100):
             states, actions, returns, nexts, are_non_terminal, total_reward = self.collect_trajectory()
             append_summary(progress_fd, str(start_episode + i_episode) + ',{0:.2f}'.format(total_reward))
             total_rewards.append(total_reward)
+            perm = np.random.permutation(len(states))
             sess.run([self.critic_step],
                      feed_dict={self.states: states,
                                 self.actions: actions,
@@ -150,7 +138,6 @@ class A2C(object):
                                 self.nexts: nexts,
                                 self.are_non_terminal: are_non_terminal,
                                 self.training: True})
-            sess.run([self.update_critic])
             # summary_writer.add_summary(summary, global_step=self.global_step.eval())
             if (i_episode + 1) % save_episodes == 0:
                 saver.save(sess, model_path)
