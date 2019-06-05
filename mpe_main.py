@@ -6,6 +6,7 @@ from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
 from algorithms.QRDQN import QRDQN, MultiagentWrapper
 from algorithms.MQRA2C import MQRA2C
+from algorithms.MRPG import MRPG
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 
@@ -19,16 +20,16 @@ def parse_arguments():
                         help='Set this to False when training and True when evaluating.')
     parser.add_argument('--restore', default=False, action='store_true', help='Restore training')
     parser.add_argument('--reward-type', default='sparse', help='[sparse, dense]')
-    parser.add_argument('--hidden-dims', default=[64, 64], type=int, nargs='+', help='Hidden dimension of network')
+    parser.add_argument('--hidden-dims', default=[256, 256], type=int, nargs='+', help='Hidden dimension of network')
     parser.add_argument('--gamma', default=0.99, type=float, help='Reward discount')
     parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
     parser.add_argument('--kappa', default=1.0, type=float, help='Kappa used in quantile Huber loss')
     parser.add_argument('--n-quantile', default=64, type=int, help='Number of quantile to approximate distribution')
-    parser.add_argument('--actor-lr', default=2e-4, type=float, help='Actor learning rate')
-    parser.add_argument('--critic-lr', default=2e-4, type=float, help='Critic learning rate')
+    parser.add_argument('--actor-lr', default=1e-4, type=float, help='Actor learning rate')
+    parser.add_argument('--critic-lr', default=1e-4, type=float, help='Critic learning rate')
     parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
     parser.add_argument('--batch-size', default=1024, type=int)
-    parser.add_argument('--step', default=100, type=int, help='Number of gradient descent steps per episode')
+    parser.add_argument('--step', default=10, type=int, help='Number of gradient descent steps per episode')
     parser.add_argument('--train-episodes', default=100, type=int, help='Number of episodes to train')
     parser.add_argument('--save-episodes', default=100, type=int, help='Number of episodes to save model')
     parser.add_argument('--memory-size', default=1000000, type=int, help='Size of replay memory')
@@ -98,6 +99,10 @@ if __name__ == '__main__':
                                     gamma=args.gamma, tau=args.tau,
                                     actor_lr=args.actor_lr,
                                     critic_lr=args.critic_lr, N=args.N)
+        elif args.model == "MRPG":
+            agent = MRPG(environment, hidden_dims=args.hidden_dims, 
+                         gamma=args.gamma, actor_lr=args.actor_lr,
+                         critic_lr=args.critic_lr, N=args.N)
     gpu_ops = tf.GPUOptions(per_process_gpu_memory_fraction=0.25, allow_growth=True)
     config = tf.ConfigProto(gpu_options=gpu_ops, allow_soft_placement=True)
     saver = tf.train.Saver()
