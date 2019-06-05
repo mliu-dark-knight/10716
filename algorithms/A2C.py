@@ -18,11 +18,11 @@ class Actor_(object):
 			hidden = states
 			for hidden_dim in self.hidden_dims:
 				hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
-				                         kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',
-																							 mode='fan_avg'))
+				                         kernel_initializer=tf.initializers.variance_scaling(),
+				                         kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
 			return tf.layers.dense(hidden, self.action_dim, activation=None,
-			                       kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',
-																							 mode='fan_avg'))
+			                       kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3),
+			                       kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
 
 class VNetwork(object):
 	def __init__(self, hidden_dims, scope):
@@ -34,11 +34,9 @@ class VNetwork(object):
 			hidden = states
 			for hidden_dim in self.hidden_dims:
 				hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
-				                         kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',
-																							 mode='fan_avg'))
+				                         kernel_initializer=tf.initializers.variance_scaling())
 			hidden = tf.layers.dense(hidden, 1, activation=None,
-			                       kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',
-																							 mode='fan_avg'))
+			                       kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3))
 			return hidden
 
 class A2C(object):
@@ -82,15 +80,17 @@ class A2C(object):
     def build_loss(self):
         states = self.states
         nexts = self.nexts
+        rewards = 0.01*self.rewards
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
-        target_value = tf.stop_gradient(self.rewards[:, None]+self.are_non_terminal[:, None] * \
+        target_value = tf.stop_gradient(rewards[:, None]+self.are_non_terminal[:, None] * \
                    np.power(self.gamma, self.N) * self.critic(nexts))
         value = self.critic(states)
         self.critic_loss = tf.losses.mean_squared_error(value, target_value)
+        self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")
         self.logits = self.actor(states)
         self.pi = tf.nn.softmax(self.logits, axis=-1)
-        log_pi = tf.log(self.pi)
+        log_pi = tf.log(self.pi+1e-12)
         action_indices = tf.concat([batch_indices, self.actions], axis=1)
         log_action_prob = tf.gather_nd(log_pi, action_indices)[:, None]
         advantage = tf.stop_gradient(target_value-value)
@@ -124,7 +124,8 @@ class A2C(object):
             append_summary(progress_fd, str(start_episode + i_episode) + ',{0:.2f}'.format(total_reward))
             total_rewards.append(total_reward)
             perm = np.random.permutation(len(states))
-            sess.run([self.critic_step],
+            for s in range(step):
+            	sess.run([self.critic_step],
                      feed_dict={self.states: states,
                                 self.actions: actions,
                                 self.rewards: returns,
