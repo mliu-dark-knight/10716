@@ -4,7 +4,7 @@ from typing import *
 from tqdm import tqdm
 import numpy as np
 from algorithms.common import *
-from algorithms.A2C import Actor_
+from algorithms.A2C import Actor_, VNetwork
 from utils import append_summary
 import collections
 
@@ -24,7 +24,7 @@ class QNetwork(object):
                                    kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3))
             return tf.reshape(hidden, [-1]+self.action_dims)
 
-class MRPG(object):
+class MA2C(object):
     '''Multi-agent Regret Policy Gradient.'''
     def __init__(self, env, hidden_dims,  gamma=1.0,
                  actor_lr=1e-3, critic_lr=1e-3, N=5):
@@ -61,7 +61,8 @@ class MRPG(object):
     def build_actor_critic(self):
         for i in range(self.n_agent):
             self.actor_list.append(Actor_(self.hidden_dims, self.action_dim[i], 'actor_{}'.format(i)))
-            self.critic_list.append(QNetwork(self.hidden_dims, self.action_dim, 'critic_{}'.format(i)))
+            #self.critic_list.append(QNetwork(self.hidden_dims, self.action_dim, 'critic_{}'.format(i)))
+            self.critic_list.append(VNetwork(self.hidden_dims, 'critic_{}'.format(i)))
 
     def build_placeholder(self):
         self.states = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)])
@@ -107,10 +108,10 @@ class MRPG(object):
         qvalues.append(qvalue[:, None])
         return tf.concat(qvalues, axis=1)
 
-    def build_loss(self):
+    '''def build_loss(self):
         states = self.states
         nexts = self.nexts
-        rewards = 0.01*self.rewards
+        rewards = self.rewards
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size, dtype=tf.int32)[:, None]
         action_indices = [self.actions[:, agent_id][:, None] for agent_id in range(self.n_agent)]
@@ -121,49 +122,86 @@ class MRPG(object):
                 np.power(self.gamma, self.N)*next_value)
             critic_output = self.critic_list[agent_id](states)
             qvalue = tf.gather_nd(critic_output, tf.concat([batch_indices]+action_indices, axis=1))[:, None]
-            critic_loss = tf.losses.mean_squared_error(qvalue, target_qvalue)
+            #critic_loss = tf.losses.mean_squared_error(qvalue, target_qvalue)
+            critic_loss = tf.losses.huber_loss(qvalue, target_qvalue)
             self.critic_loss_list.append(critic_loss)
             
             agent_states = self.states[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
+            action_indices_ = tf.concat([batch_indices, self.actions[:, agent_id][:, None]], axis=1)
             logits = self.actor_list[agent_id](agent_states)
             pi = tf.nn.softmax(logits, axis=-1)
             self.pi_list.append(pi)            
             qvalue = tf.stop_gradient(self.aggregate_action_for_qvalue(states, agent_id))
             value = tf.reduce_sum(qvalue*pi, axis=1)[:, None]
-            regret = tf.reduce_sum(tf.maximum(qvalue-value, 0), axis=1)
-            pg_loss = tf.reduce_mean(regret)
+            #regret = tf.reduce_sum(tf.maximum(qvalue-value, 0), axis=1)
+            regret = tf.math.softplus(tf.gather_nd(qvalue, action_indices_)[:, None]-value)
+            if agent_id == 0:
+                self.regret = qvalue-value
+            log_pi = tf.log(pi+1e-12)
+            log_action_prob = tf.gather_nd(log_pi, action_indices)[:, None]
+            pg_loss = tf.reduce_mean(log_action_prob*regret)
+            self.actor_loss_list.append(pg_loss)'''
+
+    def build_loss(self):
+        states = self.states
+        nexts = self.nexts
+        rewards = self.rewards
+        batch_size = tf.shape(states)[0]
+        batch_indices = tf.range(batch_size, dtype=tf.int32)[:, None]
+
+        for agent_id in range(self.n_agent):
+            target_value = tf.stop_gradient(rewards[:, agent_id][:, None]+self.are_non_terminal[:, agent_id][:, None] *\
+                np.power(self.gamma, self.N)*self.critic_list[agent_id](nexts))
+            value = self.critic_list[agent_id](states)
+            #critic_loss = tf.losses.mean_squared_error(qvalue, target_qvalue)
+            critic_loss = tf.losses.huber_loss(target_value, value)
+            self.critic_loss_list.append(critic_loss)
+            
+            agent_states = self.states[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
+            action_indices_ = tf.concat([batch_indices, self.actions[:, agent_id][:, None]], axis=1)
+            logits = self.actor_list[agent_id](agent_states)
+            pi = tf.nn.softmax(logits, axis=-1)
+            self.pi_list.append(pi)            
+            advantage = target_value-value
+            #regret = tf.math.softplus(tf.gather_nd(qvalue, action_indices_)[:, None]-value)
+            log_pi = tf.log(pi+1e-12)
+            log_action_prob = tf.gather_nd(log_pi, action_indices_)[:, None]
+            pg_loss = -tf.reduce_mean(log_action_prob*advantage)
             self.actor_loss_list.append(pg_loss)
 
     def build_step(self):
         self.global_step = tf.Variable(0, trainable=False)
-        actor_optimizer = tf.train.AdamOptimizer(learning_rate=self.actor_lr)
-        with tf.control_dependencies([tf.Assert(tf.is_finite(self.critic_loss_list[0]), [self.critic_loss_list[0]])]):
-            for i in range(self.n_agent):
-                actor_step = actor_optimizer.minimize(
-                self.actor_loss_list[i],
-                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor_{}'.format(i)))
-                self.actor_step_list.append(actor_step)
         critic_optimizer = tf.train.AdamOptimizer(learning_rate=self.critic_lr)
-        with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS, scope='normalize_states') +
-                                     [tf.Assert(tf.is_finite(self.critic_loss_list[0]), [self.critic_loss_list[0]])]):
+        with tf.control_dependencies([tf.Assert(tf.is_finite(self.critic_loss_list[0]), [self.critic_loss_list[0]])]):
             for i in range(self.n_agent):
                 critic_step = critic_optimizer.minimize(
                 self.critic_loss_list[i],
                 var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic_{}'.format(i)),
                 global_step=self.global_step)
                 self.critic_step_list.append(critic_step)
+
+        actor_optimizer = tf.train.AdamOptimizer(learning_rate=self.actor_lr)
+        with tf.control_dependencies([tf.Assert(tf.is_finite(self.actor_loss_list[0]), [self.actor_loss_list[0]])]):
+            for i in range(self.n_agent):
+                actor_step = actor_optimizer.minimize(
+                self.actor_loss_list[i],
+                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor_{}'.format(i)))
+                self.actor_step_list.append(actor_step)
+        
     
     def build_summary(self):
-        tf.summary.scalar('critic_loss', self.critic_loss_list[0])
+        for agent in range(self.n_agent):
+            tf.summary.scalar('critic_loss_{}'.format(agent), self.critic_loss_list[agent])
+            #tf.summary.scalar('actor_loss_{}'.format(agent), self.actor_loss_list[agent])
         self.merged_summary_op = tf.summary.merge_all()
     
     def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
               train_episodes=1000, save_episodes=100, max_episode_len=25, **kargs):
         total_rewards = []
+        run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+        run_meta = tf.RunMetadata()
         for i_episode in tqdm(range(train_episodes), ncols=100):
             states, actions, returns, nexts, are_non_terminal, total_reward = self.collect_trajectory(max_episode_len)
-            append_summary(progress_fd, str(start_episode + i_episode) + ',{0:.2f}'.format(total_reward))
-            total_rewards.append(total_reward)
             feed_dict={self.states: states,
                                     self.actions: actions,
                                     self.rewards: returns,
@@ -173,7 +211,11 @@ class MRPG(object):
             for t in range(step):
                 sess.run(self.critic_step_list, feed_dict=feed_dict)    
             sess.run(self.actor_step_list, feed_dict=feed_dict)
-            # summary_writer.add_summary(summary, global_step=self.global_step.eval())
+            critic_loss = self.critic_loss_list[0].eval(feed_dict=feed_dict).mean()
+            actor_loss = self.actor_loss_list[0].eval(feed_dict=feed_dict).mean()
+            append_summary(progress_fd, str(start_episode + i_episode) + ",{0:.2f}".format(total_reward)\
+                +",{0:.4f}".format(actor_loss)+",{0:.4f}".format(critic_loss))
+            total_rewards.append(total_reward)
             if (i_episode + 1) % save_episodes == 0:
                 saver.save(sess, model_path)
         return total_rewards

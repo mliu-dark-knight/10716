@@ -6,7 +6,7 @@ from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
 from algorithms.QRDQN import QRDQN, MultiagentWrapper
 from algorithms.MQRA2C import MQRA2C
-from algorithms.MRPG import MRPG
+from algorithms.MA2C import MA2C
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 
@@ -23,8 +23,8 @@ def parse_arguments():
     parser.add_argument('--hidden-dims', default=[256, 256], type=int, nargs='+', help='Hidden dimension of network')
     parser.add_argument('--gamma', default=0.99, type=float, help='Reward discount')
     parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
-    parser.add_argument('--kappa', default=1.0, type=float, help='Kappa used in quantile Huber loss')
-    parser.add_argument('--n-quantile', default=64, type=int, help='Number of quantile to approximate distribution')
+    parser.add_argument('--kappa', default=1e-6, type=float, help='Kappa used in quantile Huber loss')
+    parser.add_argument('--n-quantile', default=200, type=int, help='Number of quantile to approximate distribution')
     parser.add_argument('--actor-lr', default=1e-4, type=float, help='Actor learning rate')
     parser.add_argument('--critic-lr', default=1e-4, type=float, help='Critic learning rate')
     parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
@@ -88,19 +88,14 @@ if __name__ == '__main__':
                                      scope_pre="agent{}_".format(a)))
             agent = MultiagentWrapper(environment, n_agent, agent_params)
         elif args.model == "MQRA2C":
-            if args.eval:
-                replay_memory = None
-            else:
-                replay_memory = Replay_Memory(memory_size=args.memory_size)
             agent = MQRA2C(environment, hidden_dims=args.hidden_dims,
                                     kappa=args.kappa,
                                     n_quantile=args.n_quantile,
-                                    replay_memory=replay_memory,
-                                    gamma=args.gamma, tau=args.tau,
+                                    gamma=args.gamma,
                                     actor_lr=args.actor_lr,
                                     critic_lr=args.critic_lr, N=args.N)
-        elif args.model == "MRPG":
-            agent = MRPG(environment, hidden_dims=args.hidden_dims, 
+        elif args.model == "MA2C":
+            agent = MA2C(environment, hidden_dims=args.hidden_dims, 
                          gamma=args.gamma, actor_lr=args.actor_lr,
                          critic_lr=args.critic_lr, N=args.N)
     gpu_ops = tf.GPUOptions(per_process_gpu_memory_fraction=0.25, allow_growth=True)
@@ -118,7 +113,7 @@ if __name__ == '__main__':
                 progress_fd = open(progress_file, 'a')
         else:
             progress_fd = open(progress_file, 'w')
-            append_summary(progress_fd, 'episode,first-agent-reward')
+            append_summary(progress_fd, 'episode, first-agent-reward, first-agent-actor-loss, first-agent-critic-loss')
             progress_fd.flush()
             start_episode = 0
             tf.global_variables_initializer().run()
@@ -129,6 +124,8 @@ if __name__ == '__main__':
                 max_episode_len=args.max_episode_len)
             progress_fd.close()
             plot(os.path.join(args.plot_dir, args.model + '_' + args.env), np.array(total_rewards) + 1e-10)
+            summary_writer.close()
         else:
             agent.generate_episode(max_episode_len=args.max_episode_len,
                                    render=True)
+
