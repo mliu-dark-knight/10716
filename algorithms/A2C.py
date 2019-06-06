@@ -24,6 +24,27 @@ class Actor_(object):
 			                       kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3),
 			                       kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
 
+class BetaActor(object):
+    def __init__(self, hidden_dims, action_dim, scope):
+        self.hidden_dims = hidden_dims
+        self.action_dim = action_dim
+        self.scope = scope
+
+    def __call__(self, states):
+        with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
+            hidden = states
+            for hidden_dim in self.hidden_dims:
+                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
+                                         kernel_initializer=tf.initializers.variance_scaling(),
+                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+            alpha = tf.layers.dense(hidden, self.action_dim, activation=tf.nn.softplus,
+                                   kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3),
+                                   kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+            beta = tf.layers.dense(hidden, self.action_dim, activation=tf.nn.softplus,
+                                   kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3),
+                                   kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+            return alpha+1, beta+1
+
 class VNetwork(object):
 	def __init__(self, hidden_dims, scope):
 		self.hidden_dims = hidden_dims

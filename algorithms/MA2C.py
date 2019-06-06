@@ -4,7 +4,7 @@ from typing import *
 from tqdm import tqdm
 import numpy as np
 from algorithms.common import *
-from algorithms.A2C import Actor_, VNetwork
+from algorithms.A2C import Actor_, VNetwork, BetaActor
 from utils import append_summary
 import collections
 
@@ -48,7 +48,8 @@ class MA2C(object):
         self.critic_loss_list = []
         self.critic_list = []
         self.critic_step_list = []
-        self.pi_list = []
+        self.alpha_list = []
+        self.beta_list = []
         self.build()
         
     def build(self):
@@ -60,13 +61,13 @@ class MA2C(object):
     
     def build_actor_critic(self):
         for i in range(self.n_agent):
-            self.actor_list.append(Actor_(self.hidden_dims, self.action_dim[i], 'actor_{}'.format(i)))
+            self.actor_list.append(BetaActor(self.hidden_dims, self.action_dim[i], 'actor_{}'.format(i)))
             #self.critic_list.append(QNetwork(self.hidden_dims, self.action_dim, 'critic_{}'.format(i)))
             self.critic_list.append(VNetwork(self.hidden_dims, 'critic_{}'.format(i)))
 
     def build_placeholder(self):
         self.states = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)])
-        self.actions = tf.placeholder(tf.int32, shape=[None,self.n_agent])
+        self.actions = tf.placeholder(tf.float32, shape=[None, sum(self.action_dim)])
         self.rewards = tf.placeholder(tf.float32, shape=[None, self.n_agent])
         self.nexts = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)])
         self.are_non_terminal = tf.placeholder(tf.float32, shape=[None, self.n_agent])
@@ -158,15 +159,18 @@ class MA2C(object):
             self.critic_loss_list.append(critic_loss)
             
             agent_states = self.states[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
-            action_indices_ = tf.concat([batch_indices, self.actions[:, agent_id][:, None]], axis=1)
-            logits = self.actor_list[agent_id](agent_states)
-            pi = tf.nn.softmax(logits, axis=-1)
-            self.pi_list.append(pi)            
+            agent_actions = self.actions[:, sum(self.action_dim[:agent_id]):sum(self.action_dim[:agent_id+1])]
+            alpha, beta = self.actor_list[agent_id](agent_states)
+            self.alpha_list.append(alpha)
+            self.beta_list.append(beta)
+         
             advantage = target_value-value
             #regret = tf.math.softplus(tf.gather_nd(qvalue, action_indices_)[:, None]-value)
-            log_pi = tf.log(pi+1e-12)
-            log_action_prob = tf.gather_nd(log_pi, action_indices_)[:, None]
-            pg_loss = -tf.reduce_mean(log_action_prob*advantage)
+            e = tf.ones(batch_size)*1e-12
+            log_action_prob = (alpha-1.)*tf.log(agent_actions+e[:, None])+(beta-1.)*tf.log(1-agent_actions+e[:, None])
+            normalization = -tf.math.lgamma(alpha)-tf.math.lgamma(beta)+tf.math.lgamma(alpha+beta)
+            log_action_prob += normalization
+            pg_loss = -tf.reduce_mean(tf.reduce_sum(log_action_prob, axis=1)*advantage)
             self.actor_loss_list.append(pg_loss)
 
     def build_step(self):
@@ -263,31 +267,38 @@ class MA2C(object):
         returns = np.array(returns).T
         nexts = np.array(nexts)
         are_non_terminal = np.array(are_non_terminal).T
-        return states[:-1], actions, returns, nexts, are_non_terminal, rewards[:,0].sum()
+        return states[:-1], np.array(actions), returns, nexts, are_non_terminal, rewards[:,0].sum()
     
+    def sample_action(self, state, agent_id):
+        feed_dict = {self.states: state.reshape(1, -1), self.training: False}
+        alpha = self.alpha_list[agent_id].eval(feed_dict=feed_dict).squeeze(axis=0)
+        beta = self.beta_list[agent_id].eval(feed_dict=feed_dict).squeeze(axis=0)
+        a = np.random.beta(alpha, beta)
+        return a
+
     def generate_episode(self, render=False,
                          max_episode_len=25, benchmark=False):
         states = []
         actions = []
         rewards = []
+        infos = []
         state = self.env.reset()
         state = np.concatenate([j.reshape(1,-1) for j in state], axis=1).flatten()
         step = 0
         while True:  
             action = []
             for i in range(self.n_agent):
-                pi = self.pi_list[i].eval(feed_dict={
-                self.states: state.reshape(1, -1),
-                self.training: False}).squeeze(axis=0)
-                a = np.random.choice(np.arange(self.action_dim[i]), size=None, replace=True, p=pi)
+                a = self.sample_action(state, i)
                 action.append(a)
             states.append(state)
             state, reward, done, info = self.env.step(action)
             state = np.concatenate([j.reshape(1,-1) for j in state], axis=1).flatten()
-            if render:
-                self.env.render()
+            action = np.concatenate([j.reshape(1, -1) for j in action], axis=1).flatten()
             actions.append(action)
             rewards.append(reward)
+            infos.append(info)
+            if render:
+                self.env.render()
             step += 1
             if all(done) or step >= max_episode_len:
                 break

@@ -21,9 +21,9 @@ def parse_arguments():
     parser.add_argument('--restore', default=False, action='store_true', help='Restore training')
     parser.add_argument('--reward-type', default='sparse', help='[sparse, dense]')
     parser.add_argument('--hidden-dims', default=[256, 256], type=int, nargs='+', help='Hidden dimension of network')
-    parser.add_argument('--gamma', default=0.99, type=float, help='Reward discount')
+    parser.add_argument('--gamma', default=0.95, type=float, help='Reward discount')
     parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
-    parser.add_argument('--kappa', default=1e-6, type=float, help='Kappa used in quantile Huber loss')
+    parser.add_argument('--kappa', default=1e-3, type=float, help='Kappa used in quantile Huber loss')
     parser.add_argument('--n-quantile', default=200, type=int, help='Number of quantile to approximate distribution')
     parser.add_argument('--actor-lr', default=1e-4, type=float, help='Actor learning rate')
     parser.add_argument('--critic-lr', default=1e-4, type=float, help='Critic learning rate')
@@ -66,7 +66,6 @@ if __name__ == '__main__':
     world = scenario.make_world()
     environment = MultiAgentEnv(world, scenario.reset_world, scenario.reward,
                                 scenario.observation, scenario.benchmark_data)
-    environment.discrete_action_input = True
     n_agent = len(environment.agents)
     tf.reset_default_graph()
     with tf.device(device):

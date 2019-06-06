@@ -4,8 +4,9 @@ from typing import *
 from tqdm import tqdm
 import numpy as np
 from algorithms.common import *
+from algorithms.A2C import BetaActor
 from algorithms.MA2C import MA2C
-from algorithms.QRA2C import QRVNetwork, Actor_
+from algorithms.QRA2C import QRVNetwork
 from utils import append_summary
 import collections
 
@@ -18,7 +19,7 @@ class MQRA2C(MA2C):
     
     def build_actor_critic(self):
         for i in range(self.n_agent):
-            self.actor_list.append(Actor_(self.hidden_dims, self.action_dim[i], 'actor_{}'.format(i)))
+            self.actor_list.append(BetaActor(self.hidden_dims, self.action_dim[i], 'actor_{}'.format(i)))
             self.critic_list.append(QRVNetwork(self.hidden_dims, self.n_quantile, 'critic_{}'.format(i)))
 
     def get_mean(self, Z):
@@ -50,13 +51,15 @@ class MQRA2C(MA2C):
                               self.kappa
             self.critic_loss_list.append(tf.reduce_mean(tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=2), axis=1), axis=0))
             
-            agent_states = states[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
-            action_indices_ = tf.concat([batch_indices, self.actions[:, agent_id][:, None]], axis=1)
-            logits = self.actor_list[agent_id](agent_states)
-            pi = tf.nn.softmax(logits, axis=-1)
-            self.pi_list.append(pi)            
+            agent_states = self.states[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
+            agent_actions = self.actions[:, sum(self.action_dim[:agent_id]):sum(self.action_dim[:agent_id+1])]
+            alpha, beta = self.actor_list[agent_id](agent_states)
+            self.alpha_list.append(alpha)
+            self.beta_list.append(beta)
             advantage = tf.stop_gradient(self.get_mean(target_Z)-self.get_mean(Z))
-            log_pi = tf.log(pi+1e-12)
-            log_action_prob = tf.gather_nd(log_pi, action_indices_)[:, None]
-            pg_loss = -tf.reduce_mean(log_action_prob*advantage)
+            e = tf.ones(batch_size)*1e-12
+            log_action_prob = (alpha-1.)*tf.log(agent_actions+e[:, None])+(beta-1.)*tf.log(1-agent_actions+e[:, None])
+            normalization = -tf.math.lgamma(alpha)-tf.math.lgamma(beta)+tf.math.lgamma(alpha+beta)
+            log_action_prob += normalization
+            pg_loss = -tf.reduce_mean(tf.reduce_sum(log_action_prob, axis=1)*advantage)
             self.actor_loss_list.append(pg_loss)
