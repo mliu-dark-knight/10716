@@ -122,7 +122,7 @@ if __name__ == '__main__':
 				progress_fd = open(progress_file, 'a')
 		else:
 			progress_fd = open(progress_file, 'w')
-			append_summary(progress_fd, 'episode,total-reward')
+			append_summary(progress_fd, 'episode, total-reward, actor-loss, critic-loss')
 			progress_fd.flush()
 			start_episode = 0
 			tf.global_variables_initializer().run()

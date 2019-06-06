@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 from algorithms.common import *
 from utils import append_summary
+import gym
 
 class Actor_(object):
 	def __init__(self, hidden_dims, action_dim, scope):
@@ -70,7 +71,16 @@ class A2C(object):
         self.env = env
         self.hidden_dims = hidden_dims
         self.state_dim = reduce(mul,env.observation_space.shape)
-        self.n_action = env.action_space.n
+        if isinstance(env.action_space, gym.spaces.box.Box):
+            self.action_type = "continuous"
+            self.n_action = env.action_space.shape[0]
+            self.action_upper_limit = env.action_space.high
+            self.action_lower_limit = env.action_space.low
+        elif isinstance(env.action_space, gym.spaces.discrete.Discrete):
+            self.action_type = "discrete"
+            self.n_action = env.action_space.n
+        else:
+            raise NotImplementedError
         self.gamma = gamma
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
@@ -80,28 +90,72 @@ class A2C(object):
         self.build()
     
     def build(self):
-        self.build_actor_critic()
+        self.build_actor()
+        self.build_critic()
         self.build_placeholder()
         self.build_loss()
         self.build_step()
         self.build_summary()
     
-    def build_actor_critic(self):
-        self.actor = Actor_(self.hidden_dims, self.n_action, self.scope_pre+'actor')
+    def build_actor(self):
+        if self.action_type == "discrete":
+            self.actor = Actor_(self.hidden_dims, self.n_action, self.scope_pre+'actor')
+        else:
+            self.actor = BetaActor(self.hidden_dims, self.n_action, self.scope_pre+'actor')
+
+    def build_critic(self):
         self.critic = VNetwork(self.hidden_dims, self.scope_pre+'critic')
 
     def build_placeholder(self):
         self.states = tf.placeholder(tf.float32, shape=[None, self.state_dim])
-        self.actions = tf.placeholder(tf.int32, shape=[None,1])
+        if self.action_type == "continuous":
+            self.actions = tf.placeholder(tf.float32, shape=[None, self.n_action])
+        else:
+            self.actions = tf.placeholder(tf.int32, shape=[None, 1])
         self.rewards = tf.placeholder(tf.float32, shape=[None])
         self.nexts = tf.placeholder(tf.float32, shape=[None, self.state_dim])
         self.are_non_terminal = tf.placeholder(tf.float32, shape=[None])
         self.training = tf.placeholder(tf.bool)
     
+    def get_action_loglikelihood(self, actor_output, actions):
+        batch_size = tf.shape(actor_output)[0]
+        if isinstance(self.actor, BetaActor):
+            e = tf.ones((batch_size, self.n_action))*1e-12
+            alpha, beta = actor_output[0], actor_output[1]
+            action_loglikelihood = (alpha-1.)*tf.log(actions+e[:, None])+(beta-1.)*tf.log(1-actions+e[:, None])
+            action_loglikelihood += -tf.math.lgamma(alpha)-tf.math.lgamma(beta)+tf.math.lgamma(alpha+beta)
+        elif isinstance(self.actor, Actor_):
+            e = (tf.ones(batch_size)*1e-12)[:, None]
+            batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
+            action_indices = tf.concat([batch_indices, actions], axis=1)
+            logits = actor_output
+            logpi = tf.log(tf.nn.softmax(logits, axis=-1)+e)
+            action_loglikelihood = tf.gather_nd(logpi, action_indices)
+        else:
+            raise NotImplementedError
+        return action_loglikelihood
+
+    def sample_action(self, states):
+        feed_dict = {self.states: states.reshape(1, -1), self.training: False}
+        
+        if isinstance(self.actor, BetaActor):
+            alpha = self.actor_output[0].eval(feed_dict=feed_dict).squeeze(axis=0)
+            beta = self.actor_output[1].eval(feed_dict=feed_dict).squeeze(axis=0)
+            action = np.random.beta(alpha, beta)
+            action *= self.action_upper_limit - self.action_lower_limit
+            action -= (self.action_upper_limit + self.action_lower_limit)/2.
+        elif isinstance(self.actor, Actor_):
+            logits = self.actor_output.eval(feed_dict=feed_dict).squeeze(axis=0)
+            pi = np.exp(logits - np.max(logits))
+            pi /= np.sum(pi)
+            action = np.random.choice(np.arange(self.n_action), size=None,
+                                      replace=True, p=pi)
+        return action
+
     def build_loss(self):
         states = self.states
         nexts = self.nexts
-        rewards = 0.01*self.rewards
+        rewards = self.rewards
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
         target_value = tf.stop_gradient(rewards[:, None]+self.are_non_terminal[:, None] * \
@@ -109,13 +163,10 @@ class A2C(object):
         value = self.critic(states)
         self.critic_loss = tf.losses.mean_squared_error(value, target_value)
         self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")
-        self.logits = self.actor(states)
-        self.pi = tf.nn.softmax(self.logits, axis=-1)
-        log_pi = tf.log(self.pi+1e-12)
-        action_indices = tf.concat([batch_indices, self.actions], axis=1)
-        log_action_prob = tf.gather_nd(log_pi, action_indices)[:, None]
+        self.actor_output = self.actor(states)
+        action_loglikelihood = self.get_action_loglikelihood(self.actor_output, self.actions)
         advantage = tf.stop_gradient(target_value-value)
-        pg_loss = advantage*log_action_prob
+        pg_loss = advantage*action_loglikelihood
         self.actor_loss = -tf.reduce_mean(pg_loss)
 
     def build_step(self):
@@ -142,25 +193,20 @@ class A2C(object):
         total_rewards = []
         for i_episode in tqdm(range(train_episodes), ncols=100):
             states, actions, returns, nexts, are_non_terminal, total_reward = self.collect_trajectory()
-            append_summary(progress_fd, str(start_episode + i_episode) + ',{0:.2f}'.format(total_reward))
+            feed_dict = {self.states: states, self.actions: actions, self.rewards: returns,
+                         self.nexts: nexts, self.are_non_terminal: are_non_terminal, self.training: True}
             total_rewards.append(total_reward)
             perm = np.random.permutation(len(states))
             for s in range(step):
             	sess.run([self.critic_step],
-                     feed_dict={self.states: states,
-                                self.actions: actions,
-                                self.rewards: returns,
-                                self.nexts: nexts,
-                                self.are_non_terminal: are_non_terminal,
-                                self.training: True})
+                     feed_dict=feed_dict)
             sess.run([self.actor_step],
-                     feed_dict={self.states: states,
-                                self.actions: actions,
-                                self.rewards: returns,
-                                self.nexts: nexts,
-                                self.are_non_terminal: are_non_terminal,
-                                self.training: True})
+                     feed_dict=feed_dict)
             # summary_writer.add_summary(summary, global_step=self.global_step.eval())
+            critic_loss = self.critic_loss.eval(feed_dict=feed_dict).mean()
+            actor_loss = self.actor_loss.eval(feed_dict=feed_dict).mean()
+            append_summary(progress_fd, str(start_episode + i_episode) + ",{0:.2f}".format(total_reward)\
+                +",{0:.4f}".format(actor_loss)+",{0:.4f}".format(critic_loss))
             if (i_episode + 1) % save_episodes == 0:
                 saver.save(sess, model_path)
         return total_rewards
@@ -200,6 +246,10 @@ class A2C(object):
         returns, nexts, are_non_terminal = self.normalize_returns(states[1:],
                                                                   rewards)
         total_reward = sum(rewards)
+        actions = np.array(actions)
+        if self.action_type == "continuous":
+            actions += (self.action_upper_limit + self.action_lower_limit)/2.
+            actions /= self.action_upper_limit - self.action_lower_limit
         return states[:-1], actions, returns, nexts, are_non_terminal, total_reward
     
     def generate_episode(self, render=False):
@@ -208,16 +258,15 @@ class A2C(object):
         rewards = []
         state = self.env.reset()
         while True:
-            pi = self.pi.eval(feed_dict={
-                self.states: np.array(state).reshape(1,-1),
-                self.training: False}).squeeze(axis=0)      
-            action = np.random.choice(np.arange(self.n_action), size=None,
-                                      replace=True, p=pi)
+            action = self.sample_action(state)
             states.append(state)
             state, reward, done, _ = self.env.step(action)
             if render:
                 self.env.render()
-            actions.append([action])
+            if self.action_type == "discrete":
+                actions.append([action])
+            else:
+                actions.append(action)
             rewards.append(reward)
             if done:
                 break
