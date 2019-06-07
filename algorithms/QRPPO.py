@@ -5,41 +5,33 @@ from tqdm import tqdm
 import numpy as np
 import tensorflow as tf
 from algorithms.common import *
-from algorithms.A2C import A2C, Actor_
+from algorithms.PPO import PPO
+from algorithms.A2C import Actor_, BetaActor
+from algorithms.QRA2C import QRVNetwork
 from utils import append_summary
+import gym
 
-class QRVNetwork(object):
-    def __init__(self, hidden_dims, n_quantile, scope):
-        self.hidden_dims = hidden_dims
-        self.n_quantile = n_quantile
-        self.scope = scope
-    def __call__(self, states):
-        with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
-            hidden = states
-            for hidden_dim in self.hidden_dims:
-                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
-                                         kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',
-                                                                                             mode='fan_avg'),
-                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
-            hidden = tf.layers.dense(hidden, self.n_quantile, activation=None,
-                                   kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',mode='fan_avg'),
-                                   kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
-            return hidden
-
-
-class QRA2C(A2C):
+class QRPPO(PPO):
     '''
     Implement off-policy A2C algorithm.
-    Critic is trained with quantile regression algorithm.
     Advantage is estimated as V(next)-V(current)+reward.
     '''
-    def __init__(self, *args, kappa=1.0, n_quantile=64, **kwargs):
+    def __init__(self, *args,kappa=1.0, n_quantile=64, **kwargs):
         self.kappa = kappa
         self.n_quantile = n_quantile
-        super(QRA2C, self).__init__(*args, **kwargs)
+        super(QRPPO, self).__init__(*args, **kwargs)
+
+    def build_actor(self):
+        if self.action_type == "discrete":
+            self.actor = Actor_(self.hidden_dims, self.n_action, self.scope_pre+'actor')
+            self.actor_target = Actor_(self.hidden_dims, self.n_action, self.scope_pre+'target_actor')
+        else:
+            self.actor = BetaActor(self.hidden_dims, self.n_action, self.scope_pre+'actor')
+            self.actor_target = BetaActor(self.hidden_dims, self.n_action, self.scope_pre+'target_actor')
 
     def build_critic(self):
         self.critic = QRVNetwork(self.hidden_dims, self.n_quantile, self.scope_pre+'critic')
+        self.critic_target = QRVNetwork(self.hidden_dims, self.n_quantile, self.scope_pre+'target_critic')
 
     def get_mean(self, Z):
         part1 = Z[:, :-2:2]
@@ -67,14 +59,20 @@ class QRA2C(A2C):
         batch_size = tf.shape(states)[0]
         batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
         target_Z = tf.stop_gradient(rewards[:,None]+self.are_non_terminal[:, None] * \
-                   np.power(self.gamma, self.N) * self.critic(nexts))
+                   np.power(self.gamma, self.N) * self.critic_target(nexts))
         Z = self.critic(states)
+        #self.critic_loss = tf.losses.mean_squared_error(value, target_value)
         regression_loss = self.get_huber_quantile_regression_loss(target_Z, Z)
         self.critic_loss = tf.reduce_mean(self.get_huber_quantile_regression_loss(target_Z, Z), axis=0)
         self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")
-        
+
+        target_value = self.get_mean(target_Z)
+        value = self.get_mean(Z)
         self.actor_output = self.actor(states)
         action_loglikelihood = self.get_action_loglikelihood(self.actor_output, self.actions)
-        advantage = tf.stop_gradient(self.get_mean(target_Z)-self.get_mean(Z))
-        pg_loss = advantage*action_loglikelihood
+        old_action_loglikelihood = self.get_action_loglikelihood(self.actor_target(states), self.actions)
+        ratio = tf.exp(action_loglikelihood-old_action_loglikelihood)
+        #advantage = tf.stop_gradient(target_value-value)
+        advantage = tf.stop_gradient(self.compute_gae(value[:, None], target_value[:, None]))
+        pg_loss = tf.minimum(ratio*advantage, tf.clip_by_value(ratio, 0.8, 1.2)*advantage)
         self.actor_loss = -tf.reduce_mean(pg_loss)

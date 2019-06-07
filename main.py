@@ -11,6 +11,8 @@ from algorithms.D3PG import D3PG
 from algorithms.QRDQN import QRDQN
 from algorithms.QRA2C import QRA2C
 from algorithms.A2C import A2C
+from algorithms.PPO import PPO
+from algorithms.QRPPO import QRPPO
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 
@@ -27,9 +29,10 @@ def parse_arguments():
 	parser.add_argument('--reward-type', default='sparse', help='[sparse, dense]')
 	parser.add_argument('--hidden-dims', default=[256, 256], type=int, nargs='+', help='Hidden dimension of network')
 	parser.add_argument('--gamma', default=0.99, type=float, help='Reward discount')
+	parser.add_argument('--lambd', default=0.95, type=float, help='discount for gae')
 	parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
 	parser.add_argument('--kappa', default=1.0, type=float, help='Kappa used in quantile Huber loss')
-	parser.add_argument('--n-quantile', default=64, type=int, help='Number of quantile to approximate distribution')
+	parser.add_argument('--n-quantile', default=200, type=int, help='Number of quantile to approximate distribution')
 	parser.add_argument('--actor-lr', default=1e-4, type=float, help='Actor learning rate')
 	parser.add_argument('--critic-lr', default=1e-4, type=float, help='Critic learning rate')
 	parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
@@ -97,12 +100,19 @@ if __name__ == '__main__':
 			agent = QRDQN(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
 			lr=args.actor_lr, tau=args.tau, N=args.N, kappa=args.kappa,n_quantile=args.n_quantile)
 		elif args.model == 'QRA2C':
-			agent = QRA2C(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
+			agent = QRA2C(environment, args.hidden_dims, gamma=args.gamma,
 			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, kappa=args.kappa,
 			               n_quantile=args.n_quantile)
 		elif args.model == 'A2C':
-			agent = A2C(environment, args.hidden_dims, replay_memory=replay_memory, gamma=args.gamma,
+			agent = A2C(environment, args.hidden_dims, gamma=args.gamma,
 			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N)
+		elif args.model == 'PPO':
+			agent = PPO(environment, args.hidden_dims, gamma=args.gamma, lambd=args.lambd,
+			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N)
+		elif args.model == 'QRPPO':
+			agent = QRPPO(environment, args.hidden_dims, gamma=args.gamma, lambd=args.lambd,
+			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, kappa=args.kappa,
+			               n_quantile=args.n_quantile)
 		else:
 			raise NotImplementedError
 
