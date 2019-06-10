@@ -187,7 +187,7 @@ class A2C(object):
 		with tf.control_dependencies([tf.Assert(tf.is_finite(self.actor_loss), [self.actor_loss])]):
 			#gvs = actor_optimizer.compute_gradients(self.actor_loss,
 			#	var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
-			#clipped_grad_var = clip_grad_by_global_norm(gvs, 0.5)
+			#clipped_grad_var = clip_grad_by_global_norm(gvs, 5)
 			#self.actor_step = actor_optimizer.apply_gradients(clipped_grad_var)
 			self.actor_step = actor_optimizer.minimize(
 				self.actor_loss,
@@ -200,7 +200,7 @@ class A2C(object):
 				global_step=self.global_step)
 			#gvs = critic_optimizer.compute_gradients(self.critic_loss,
 			#	var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'))
-			#clipped_grad_var = clip_grad_by_global_norm(gvs, 0.5)
+			#clipped_grad_var = clip_grad_by_global_norm(gvs, 1)
 			#self.critic_step = actor_optimizer.apply_gradients(clipped_grad_var)
 	
 	def build_summary(self):

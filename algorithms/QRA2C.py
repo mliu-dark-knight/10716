@@ -20,12 +20,35 @@ class QRVNetwork(object):
                 hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
                                          kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',
                                                                                              mode='fan_avg'),
-                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(2e-3))
+            
             hidden = tf.layers.dense(hidden, self.n_quantile, activation=None,
                                    kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',mode='fan_avg'),
-                                   kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                   kernel_regularizer=tf.contrib.layers.l2_regularizer(2e-3))
             return hidden
 
+class QRVNetworkNoCrossing(object):
+    def __init__(self, hidden_dims, n_quantile, scope):
+        self.hidden_dims = hidden_dims
+        self.n_quantile = n_quantile
+        self.scope = scope
+    def __call__(self, states):
+        with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
+            hidden = states
+            for hidden_dim in self.hidden_dims:
+                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
+                                         kernel_initializer=tf.initializers.variance_scaling(distribution='uniform',
+                                                                                             mode='fan_avg'),
+                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(2e-3))
+            base = tf.layers.dense(hidden, 1, activation=None, use_bias=False,
+                                   kernel_initializer=tf.initializers.random_uniform(minval=-3e-6, maxval=3e-6),
+                                   kernel_regularizer=tf.contrib.layers.l2_regularizer(2e-3))
+            quantiles = tf.layers.dense(hidden, self.n_quantile-1, activation=tf.nn.relu, use_bias=False,
+                                   kernel_initializer=tf.initializers.random_uniform(minval=-3e-6, maxval=3e-6),
+                                   kernel_regularizer=tf.contrib.layers.l2_regularizer(2e-3))
+            out = tf.concat([base, quantiles], axis=1)
+            out = tf.math.cumsum(out, axis=1)
+            return out
 
 class QRA2C(A2C):
     '''
@@ -78,3 +101,27 @@ class QRA2C(A2C):
         advantage = tf.stop_gradient(self.get_mean(target_Z)-self.get_mean(Z))
         pg_loss = advantage*action_loglikelihood
         self.actor_loss = -tf.reduce_mean(pg_loss)
+
+    def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
+              train_episodes=1000, save_episodes=100, epsilon=0.3, apply_her=False, n_goals=10):
+        total_rewards = []
+        sess.run([self.init_actor, self.init_critic])
+        for i_episode in tqdm(range(train_episodes), ncols=100):
+            states, actions, returns, nexts, are_non_terminal, total_reward = self.collect_trajectory()
+            feed_dict = {self.states: states, self.actions: actions, self.rewards: returns,
+                         self.nexts: nexts, self.are_non_terminal: are_non_terminal, self.training: True}
+            total_rewards.append(total_reward)
+            perm = np.random.permutation(len(states))
+            for s in range(step):
+                sess.run([self.critic_step], feed_dict=feed_dict)
+                sess.run([self.actor_step], feed_dict=feed_dict)
+            sess.run([self.update_critic])
+            sess.run([self.update_actor])
+            # summary_writer.add_summary(summary, global_step=self.global_step.eval())
+            critic_loss = self.critic_loss.eval(feed_dict=feed_dict).mean()
+            actor_loss = self.actor_loss.eval(feed_dict=feed_dict).mean()
+            append_summary(progress_fd, str(start_episode + i_episode) + ",{0:.2f}".format(total_reward)\
+                +",{0:.4f}".format(actor_loss)+",{0:.4f}".format(critic_loss))
+            if (i_episode + 1) % save_episodes == 0:
+                saver.save(sess, model_path)
+        return total_rewards
