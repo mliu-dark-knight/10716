@@ -81,11 +81,9 @@ class PPO(A2C):
             total_rewards.append(total_reward)
             perm = np.random.permutation(len(states))
             for s in range(step):
-                sess.run([self.critic_step], feed_dict=feed_dict)
-                sess.run([self.actor_step], feed_dict=feed_dict)
-            sess.run([self.update_critic])
+                sess.run([self.critic_step, self.actor_step], feed_dict=feed_dict)
+                sess.run([self.update_critic])
             sess.run([self.update_actor])
-            # summary_writer.add_summary(summary, global_step=self.global_step.eval())
             critic_loss = self.critic_loss.eval(feed_dict=feed_dict).mean()
             actor_loss = self.actor_loss.eval(feed_dict=feed_dict).mean()
             append_summary(progress_fd, str(start_episode + i_episode) + ",{0:.2f}".format(total_reward)\

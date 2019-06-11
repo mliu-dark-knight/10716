@@ -70,15 +70,16 @@ class QRPPO(PPO):
 
         target_value = self.get_mean(target_Z)
         value = self.get_mean(Z)
-        #self.critic_loss = tf.losses.huber_loss(target_value, value)
+        self.critic_loss += tf.losses.huber_loss(target_value, value)
         self.actor_output = self.actor(states)
+        #pi = tf.nn.softmax(self.actor_output, axis=1)
+        #entropy = - tf.reduce_sum(tf.log(pi+1e-12)*pi, axis=1)[:, None]
         action_loglikelihood = self.get_action_loglikelihood(self.actor_output, self.actions)
         old_action_loglikelihood = self.get_action_loglikelihood(self.actor_target(states), self.actions)
         ratio = tf.exp(action_loglikelihood-old_action_loglikelihood)
-        #advantage = tf.stop_gradient(target_value-value)
         advantage = tf.stop_gradient(self.compute_gae(value[:, None], target_value[:, None]))
         pg_loss = tf.minimum(ratio*advantage, tf.clip_by_value(ratio, 0.8, 1.2)*advantage)
-        self.actor_loss = -tf.reduce_mean(pg_loss)
+        #self.actor_loss = -tf.reduce_mean(pg_loss+0.0001*entropy)
 
     def build_step(self):
         def clip_grad_by_global_norm(grad_var, max_norm):
@@ -99,10 +100,10 @@ class QRPPO(PPO):
                 var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
         critic_optimizer = tf.train.AdamOptimizer(learning_rate=self.critic_lr)
         with tf.control_dependencies([tf.Assert(tf.is_finite(self.critic_loss), [self.critic_loss])]):
-            self.critic_step = critic_optimizer.minimize(
-                self.critic_loss,
-                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
-                global_step=self.global_step)
+            #self.critic_step = critic_optimizer.minimize(
+            #    self.critic_loss,
+            #    var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
+            #    global_step=self.global_step)
             gvs = critic_optimizer.compute_gradients(self.critic_loss,
                 var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'))
             clipped_grad_var = clip_grad_by_global_norm(gvs, 0.5)
@@ -111,32 +112,20 @@ class QRPPO(PPO):
     def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
               train_episodes=1000, save_episodes=100, epsilon=0.3, apply_her=False, n_goals=10):
         total_rewards = []
-        quantile_outputs = []
         sess.run([self.init_actor, self.init_critic])
         for i_episode in tqdm(range(train_episodes), ncols=100):
             states, actions, returns, nexts, are_non_terminal, total_reward = self.collect_trajectory()
-            feed_dict = {self.states: states[-2].reshape(1,-1), self.rewards: [returns[-2]],
-                         self.nexts: nexts[-2].reshape(1,-1), self.are_non_terminal: [are_non_terminal[-2]], self.training: False}
-
-            Z = self.Z.eval(feed_dict=feed_dict).squeeze()
-            target_Z = self.target_Z.eval(feed_dict=feed_dict).squeeze()
-            critic_loss = self.critic_loss.eval(feed_dict=feed_dict).squeeze()
-            quantile_outputs.append([Z, target_Z, [critic_loss]])
             feed_dict = {self.states: states, self.actions: actions, self.rewards: returns,
                          self.nexts: nexts, self.are_non_terminal: are_non_terminal, self.training: True}
             total_rewards.append(total_reward)
-            perm = np.random.permutation(len(states))
             for s in range(step):
-                sess.run([self.critic_step], feed_dict=feed_dict)
-                sess.run([self.actor_step], feed_dict=feed_dict)
-            sess.run([self.update_critic])
+                sess.run([self.critic_step, self.actor_step], feed_dict=feed_dict)
+                sess.run([self.update_critic])
             sess.run([self.update_actor])
-            # summary_writer.add_summary(summary, global_step=self.global_step.eval())
             critic_loss = self.critic_loss.eval(feed_dict=feed_dict).mean()
             actor_loss = self.actor_loss.eval(feed_dict=feed_dict).mean()
             append_summary(progress_fd, str(start_episode + i_episode) + ",{0:.2f}".format(total_reward)\
                 +",{0:.4f}".format(actor_loss)+",{0:.4f}".format(critic_loss))
             if (i_episode + 1) % save_episodes == 0:
                 saver.save(sess, model_path)
-        np.save("quantile_outputs.npy", np.array(quantile_outputs))
         return total_rewards
