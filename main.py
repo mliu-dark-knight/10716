@@ -15,7 +15,12 @@ from algorithms.PPO import PPO
 from algorithms.QRPPO import QRPPO
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
+from collections import defaultdict
 
+reward_scaling = defaultdict(lambda: 1.)
+reward_scaling["Pendulum-v0"] = 0.1
+reward_scaling["Acrobot-v1"] = 0.1
+reward_scaling["LunarLander-v2"] = 0.1
 
 def parse_arguments():
 	parser = argparse.ArgumentParser()
@@ -33,8 +38,8 @@ def parse_arguments():
 	parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
 	parser.add_argument('--kappa', default=1e-6, type=float, help='Kappa used in quantile Huber loss')
 	parser.add_argument('--n-quantile', default=200, type=int, help='Number of quantile to approximate distribution')
-	parser.add_argument('--actor-lr', default=1e-4, type=float, help='Actor learning rate')
-	parser.add_argument('--critic-lr', default=1e-4, type=float, help='Critic learning rate')
+	parser.add_argument('--actor-lr', default=5e-5, type=float, help='Actor learning rate')
+	parser.add_argument('--critic-lr', default=5e-5, type=float, help='Critic learning rate')
 	parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
 	parser.add_argument('--batch-size', default=256, type=int)
 	parser.add_argument('--step', default=3, type=int, help='Number of gradient descent steps per episode')
@@ -50,7 +55,7 @@ def parse_arguments():
 	parser.add_argument('--model-dir', default='model', type=str)
 	parser.add_argument('--log-dir', default='log', type=str)
 	parser.add_argument('--progress-file', default='progress.csv', type=str)
-	parser.add_argument('--device', default=1, type=int, help='GPU device number')
+	parser.add_argument('--device', default=0, type=int, help='GPU device number')
 	return parser.parse_args()
 
 
@@ -140,7 +145,7 @@ if __name__ == '__main__':
 			total_rewards = agent.train(
 				sess, saver, summary_writer, progress_fd, model_path, batch_size=args.batch_size, step=args.step,
 				train_episodes=args.train_episodes, start_episode=start_episode, save_episodes=args.save_episodes,
-				epsilon=args.epsilon, apply_her=args.apply_her, n_goals=args.n_goals)
+				epsilon=args.epsilon, apply_her=args.apply_her, n_goals=args.n_goals, reward_scaling=reward_scaling[args.env])
 			progress_fd.close()
 			plot(os.path.join(args.plot_dir, args.model + '_' + args.env), np.array(total_rewards) + 1e-10)
 		else:

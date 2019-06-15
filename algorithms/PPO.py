@@ -23,9 +23,6 @@ class PPO(A2C):
         self.init_actor, self.update_actor = get_target_updates(
             tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'),
             tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_actor'), 1)
-        self.init_critic, self.update_critic = get_target_updates(
-            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
-            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_critic'), self.tau)
 
     def build_actor(self):
         if self.action_type == "discrete":
@@ -50,44 +47,85 @@ class PPO(A2C):
         advantage = tf.linalg.matmul(mask, td_err)
         return advantage
 
-    def build_loss(self):
-        states = self.states
-        nexts = self.nexts
-        rewards = self.rewards
-        batch_size = tf.shape(states)[0]
-        batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
-        target_value = tf.stop_gradient(rewards[:, None]+self.are_non_terminal[:, None] * \
-                   np.power(self.gamma, self.N) * self.critic_target(nexts))
-        value = self.critic(states)
-        #self.critic_loss = tf.losses.mean_squared_error(value, target_value)
-        self.critic_loss = tf.losses.huber_loss(target_value, value)
+    def compute_return(self):
+        batch_size = tf.shape(self.states)[0]
+        a = tf.ones(batch_size-1)*self.gamma
+        a = tf.math.cumprod(a, axis=0)[None, :]
+        a = tf.concat([tf.ones((1,1)), a], axis=1)
+        b = tf.ones(batch_size-1)/self.gamma
+        b = tf.math.cumprod(b, axis=0)[:, None]
+        b = tf.concat([tf.ones((1,1)), b], axis=0)
+        mask = tf.linalg.matmul(b,a)
+        mask = tf.matrix_band_part(mask, 0, -1)
+        self.returns = tf.linalg.matmul(mask, self.rewards[:, None])
+
+    def build_critic_loss(self):
+        self.compute_return()
+        self.value = self.critic(self.states)
+        self.critic_loss = tf.losses.huber_loss(self.returns, self.value)
         self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")
-        self.actor_output = self.actor(states)
+        self.target_value = tf.stop_gradient(self.rewards[:,None]+self.are_non_terminal[:, None] * \
+                   np.power(self.gamma, self.N) * self.critic(self.nexts))
+
+    def build_loss(self):
+        self.build_critic_loss()
+        batch_size = tf.shape(self.states)[0]
+        batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
+        self.actor_output = self.actor(self.states)
         action_loglikelihood = self.get_action_loglikelihood(self.actor_output, self.actions)
-        old_action_loglikelihood = self.get_action_loglikelihood(self.actor_target(states), self.actions)
+        old_action_loglikelihood = self.get_action_loglikelihood(self.actor_target(self.states), self.actions)
         ratio = tf.exp(action_loglikelihood-old_action_loglikelihood)
-        advantage = tf.stop_gradient(self.compute_gae(value, target_value))
+        advantage = tf.stop_gradient(self.compute_gae(self.value, self.target_value))
         pg_loss = tf.minimum(ratio*advantage, tf.clip_by_value(ratio, 0.8, 1.2)*advantage)
         self.actor_loss = -tf.reduce_mean(pg_loss)
+
+    def build_step(self):
+        def clip_grad_by_global_norm(grad_var, max_norm):
+            grad_var = list(zip(*grad_var))
+            grad, var = grad_var[0], grad_var[1]
+            clipped_grad,_ = tf.clip_by_global_norm(grad, max_norm)
+            return list(zip(clipped_grad, var))
+
+        self.global_step = tf.Variable(0, trainable=False)
+        actor_optimizer = tf.train.AdamOptimizer(learning_rate=self.actor_lr)
+        with tf.control_dependencies([tf.Assert(tf.is_finite(self.actor_loss), [self.actor_loss])]):
+            #gvs = actor_optimizer.compute_gradients(self.actor_loss,
+            #   var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
+            #clipped_grad_var = clip_grad_by_global_norm(gvs, 5)
+            #self.actor_step = actor_optimizer.apply_gradients(clipped_grad_var)
+            self.actor_step = actor_optimizer.minimize(
+                self.actor_loss,
+                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
+        critic_optimizer = tf.train.AdamOptimizer(learning_rate=self.critic_lr)
+        with tf.control_dependencies([tf.Assert(tf.is_finite(self.critic_loss), [self.critic_loss])]):
+            #self.critic_step = critic_optimizer.minimize(
+            #    self.critic_loss,
+            #    var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
+            #    global_step=self.global_step)
+            gvs = critic_optimizer.compute_gradients(self.critic_loss,
+                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'))
+            clipped_grad_var = clip_grad_by_global_norm(gvs, 0.5)
+            self.critic_step = actor_optimizer.apply_gradients(clipped_grad_var)
     
     def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
-              train_episodes=1000, save_episodes=100, epsilon=0.3, apply_her=False, n_goals=10):
+              train_episodes=1000, save_episodes=100, epsilon=0.3, apply_her=False, n_goals=10, reward_scaling=1.):
         total_rewards = []
-        sess.run([self.init_actor, self.init_critic])
+        sess.run([self.init_actor])
         for i_episode in tqdm(range(train_episodes), ncols=100):
             states, actions, returns, nexts, are_non_terminal, total_reward = self.collect_trajectory()
-            feed_dict = {self.states: states, self.actions: actions, self.rewards: returns,
+            feed_dict = {self.states: states, self.actions: actions, self.rewards: reward_scaling*returns,
                          self.nexts: nexts, self.are_non_terminal: are_non_terminal, self.training: True}
             total_rewards.append(total_reward)
             perm = np.random.permutation(len(states))
             for s in range(step):
-                sess.run([self.critic_step, self.actor_step], feed_dict=feed_dict)
-                sess.run([self.update_critic])
+                sess.run([self.actor_step], feed_dict=feed_dict)
             sess.run([self.update_actor])
+            for s in range(3*step):
+                sess.run([self.critic_step], feed_dict=feed_dict)
             critic_loss = self.critic_loss.eval(feed_dict=feed_dict).mean()
             actor_loss = self.actor_loss.eval(feed_dict=feed_dict).mean()
             append_summary(progress_fd, str(start_episode + i_episode) + ",{0:.2f}".format(total_reward)\
-                +",{0:.4f}".format(actor_loss)+",{0:.4f}".format(critic_loss))
+                +",{0:.8f}".format(actor_loss)+",{0:.4f}".format(critic_loss))
             if (i_episode + 1) % save_episodes == 0:
                 saver.save(sess, model_path)
         return total_rewards
