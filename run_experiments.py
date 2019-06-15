@@ -11,7 +11,7 @@ if __name__ == '__main__':
 	algorithms = ["PPO", "QRPPO"]
 	envs = ["CartPole-v0", "LunarLander-v2", "Acrobot-v1", "Pendulum-v0"]
 	n_episodes = {"CartPole-v0": 2000,
-				  "LunarLander-v2": 20000,
+				  "LunarLander-v2": 30000,
 				  "Acrobot-v1":5000,
 				  "Pendulum-v0":20000}
 	for algo in algorithms:
