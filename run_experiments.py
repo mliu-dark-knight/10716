@@ -9,10 +9,8 @@ def parse_arguments():
 if __name__ == '__main__':
 	args = parse_arguments()
 	algorithms = ["PPO", "QRPPO"]
-	envs = ["CartPole-v0", "LunarLander-v2", "Acrobot-v1", "Pendulum-v0"]
-	n_episodes = {"CartPole-v0": 2000,
-				  "LunarLander-v2": 30000,
-				  "Acrobot-v1":5000,
+	envs = ["Acrobot-v1", "Pendulum-v0"]
+	n_episodes = {"Acrobot-v1":5000,
 				  "Pendulum-v0":20000}
 	for algo in algorithms:
 		for env in envs:
@@ -23,6 +21,6 @@ if __name__ == '__main__':
 			cmd += " --model {}".format(algo)
 			cmd += " --train-episodes {}".format(n_episodes[env])
 			cmd += " --log-dir exp-{}-log".format(args.exp_id)
-			cmd += " --model-dir exp-{}-log".format(args.exp_id)
-			cmd += " --plot-dir exp-{}-log".format(args.exp_id)
+			cmd += " --model-dir exp-{}-model".format(args.exp_id)
+			cmd += " --plot-dir exp-{}-plot".format(args.exp_id)
 			os.system(cmd)

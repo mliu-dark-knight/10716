@@ -6,3 +6,4 @@
 .vscode
 plot/*
 exp-*
+.ipynb_checkpoints/*
