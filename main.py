@@ -1,6 +1,6 @@
 import argparse
 import os
-
+import roboschool
 import gym
 import numpy as np
 import tensorflow as tf
@@ -20,7 +20,6 @@ from collections import defaultdict
 reward_scaling = defaultdict(lambda: 1.)
 reward_scaling["Pendulum-v0"] = 0.1
 reward_scaling["Acrobot-v1"] = 0.1
-reward_scaling["LunarLander-v2"] = 0.1
 
 def parse_arguments():
 	parser = argparse.ArgumentParser()

@@ -89,13 +89,13 @@ class PPO(A2C):
         self.global_step = tf.Variable(0, trainable=False)
         actor_optimizer = tf.train.AdamOptimizer(learning_rate=self.actor_lr)
         with tf.control_dependencies([tf.Assert(tf.is_finite(self.actor_loss), [self.actor_loss])]):
-            #gvs = actor_optimizer.compute_gradients(self.actor_loss,
-            #   var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
-            #clipped_grad_var = clip_grad_by_global_norm(gvs, 5)
-            #self.actor_step = actor_optimizer.apply_gradients(clipped_grad_var)
-            self.actor_step = actor_optimizer.minimize(
-                self.actor_loss,
-                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
+            gvs = actor_optimizer.compute_gradients(self.actor_loss,
+               var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
+            clipped_grad_var = clip_grad_by_global_norm(gvs, 0.5)
+            self.actor_step = actor_optimizer.apply_gradients(clipped_grad_var)
+            #self.actor_step = actor_optimizer.minimize(
+            #    self.actor_loss,
+            #    var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
         critic_optimizer = tf.train.AdamOptimizer(learning_rate=self.critic_lr)
         with tf.control_dependencies([tf.Assert(tf.is_finite(self.critic_loss), [self.critic_loss])]):
             #self.critic_step = critic_optimizer.minimize(

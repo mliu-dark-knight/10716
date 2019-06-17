@@ -99,31 +99,3 @@ class QRPPO(PPO):
         advantage = tf.stop_gradient(self.compute_gae(self.value[:, None], self.target_value[:, None]))
         pg_loss = tf.minimum(ratio*advantage, tf.clip_by_value(ratio, 0.8, 1.2)*advantage)
         self.actor_loss = -tf.reduce_mean(pg_loss)
-
-    def build_step(self):
-        def clip_grad_by_global_norm(grad_var, max_norm):
-            grad_var = list(zip(*grad_var))
-            grad, var = grad_var[0], grad_var[1]
-            clipped_grad,_ = tf.clip_by_global_norm(grad, max_norm)
-            return list(zip(clipped_grad, var))
-
-        self.global_step = tf.Variable(0, trainable=False)
-        actor_optimizer = tf.train.AdamOptimizer(learning_rate=self.actor_lr)
-        with tf.control_dependencies([tf.Assert(tf.is_finite(self.actor_loss), [self.actor_loss])]):
-            #gvs = actor_optimizer.compute_gradients(self.actor_loss,
-            #   var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
-            #clipped_grad_var = clip_grad_by_global_norm(gvs, 5)
-            #self.actor_step = actor_optimizer.apply_gradients(clipped_grad_var)
-            self.actor_step = actor_optimizer.minimize(
-                self.actor_loss,
-                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
-        critic_optimizer = tf.train.AdamOptimizer(learning_rate=self.critic_lr)
-        with tf.control_dependencies([tf.Assert(tf.is_finite(self.critic_loss), [self.critic_loss])]):
-            #self.critic_step = critic_optimizer.minimize(
-            #    self.critic_loss,
-            #    var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
-            #    global_step=self.global_step)
-            gvs = critic_optimizer.compute_gradients(self.critic_loss,
-                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'))
-            clipped_grad_var = clip_grad_by_global_norm(gvs, 0.5)
-            self.critic_step = actor_optimizer.apply_gradients(clipped_grad_var)
