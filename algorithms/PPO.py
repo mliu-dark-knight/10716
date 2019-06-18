@@ -148,7 +148,7 @@ class PPO(A2C):
                 nexts = states[1:].copy()
                 are_non_terminal = np.ones(len(nexts))
                 are_non_terminal[-1] = 0
-                total_rewards.append(sum(rewards))
+                #total_rewards.append(sum(rewards))
                 feed_dict = {self.states: states[:-1], self.rewards: rewards,
                             self.nexts: nexts, self.are_non_terminal: are_non_terminal, self.training: True}
                 target_value, value = sess.run([self.target_value, self.value], feed_dict=feed_dict)
