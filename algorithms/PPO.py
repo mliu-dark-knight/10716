@@ -168,6 +168,7 @@ class PPO(A2C):
                 actions = []
                 rewards = []
         if not self.env_info['done']:
+            '''
             states.append(state)
             actions = np.array(actions)
             if isinstance(self.actor, BetaActor):
@@ -185,7 +186,8 @@ class PPO(A2C):
             states_mem = np.concatenate([states_mem, states[:-1]], axis=0)
             returns_mem = np.concatenate([returns_mem, returns], axis=0)
             advantages_mem = np.concatenate([advantages_mem, advantages], axis=0)
-            actions_mem = np.concatenate([actions_mem, actions], axis=0)
+            actions_mem = np.concatenate([actions_mem, actions], axis=0)'''
+            self.env_info['done'] = True
 
         #return states[:-1], actions, returns, nexts, are_non_terminal, total_reward
         assert len(states_mem)  == len(actions_mem) and \
