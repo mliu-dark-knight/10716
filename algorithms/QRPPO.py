@@ -31,15 +31,6 @@ class QRPPO(PPO):
 
     def build_critic(self):
         self.critic = QRVNetworkNoCrossing(self.hidden_dims, self.n_quantile, self.scope_pre+'critic')
-        #self.critic_target = QRVNetworkNoCrossing(self.hidden_dims, self.n_quantile, self.scope_pre+'target_critic')
-
-    def build_copy_op(self):
-        self.init_actor, self.update_actor = get_target_updates(
-            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'),
-            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_actor'), 1)
-        #self.init_critic, self.update_critic = get_target_updates(
-        #    tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
-        #    tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_critic'), self.tau)
     
     def get_mean(self, Z):
         part1 = Z[:, :-2:2]
@@ -69,8 +60,6 @@ class QRPPO(PPO):
         self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")'''
 
     def build_critic_loss(self):
-        self.compute_return()
-        self.Z = self.critic(self.states)
         errors = self.returns - self.Z
         huber_loss_case_one = tf.to_float(tf.abs(errors) <= self.kappa) * 0.5 * errors ** 2
         huber_loss_case_two = tf.to_float(tf.abs(errors) > self.kappa) * self.kappa * \
@@ -81,23 +70,14 @@ class QRPPO(PPO):
                               self.kappa
         self.critic_loss = tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=1), axis=0)
         #self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")
-        self.target_Z =  tf.stop_gradient(self.rewards[:,None]+self.are_non_terminal[:, None] * \
-                   np.power(self.gamma, self.N) * self.critic(self.nexts))
-        self.target_value = self.get_mean(self.target_Z)
-        self.value = self.get_mean(self.Z)
-        self.critic_loss += tf.losses.huber_loss(self.returns, self.value[:, None])
+        self.critic_loss += tf.losses.mean_squared_error(self.returns, self.value)
 
     def build_loss(self):
-        batch_size = tf.shape(self.states)[0]
-        batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
-        self.build_critic_loss()        
+        self.Z = self.critic(self.states)
+        self.value = self.get_mean(self.Z)[:, None]
+        self.target_Z =  tf.stop_gradient(self.rewards[:,None]+self.are_non_terminal[:, None] * \
+                   np.power(self.gamma, self.N) * self.critic(self.nexts))
+        self.target_value = self.get_mean(self.target_Z)[:, None]
+        self.build_critic_loss()
+        self.build_actor_loss()        
         
-        self.actor_output = self.actor(self.states)
-        action_loglikelihood = self.get_action_loglikelihood(self.actor_output, self.actions)
-        old_action_loglikelihood = self.get_action_loglikelihood(self.actor_target(self.states), self.actions)
-        ratio = tf.exp(action_loglikelihood-old_action_loglikelihood)
-        advantage = tf.stop_gradient(self.compute_gae(self.value[:, None], self.target_value[:, None]))
-        pg_loss = tf.minimum(ratio*advantage, tf.clip_by_value(ratio, 0.8, 1.2)*advantage)
-        
-        entropy = self.get_policy_entropy(self.actor_output)
-        self.actor_loss = -tf.reduce_mean(pg_loss+1e-2*entropy)

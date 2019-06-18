@@ -42,6 +42,24 @@ class BetaActor(object):
 								   kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3))
 			return alpha+1, beta+1
 
+class GaussianActor(object):
+	def __init__(self, hidden_dims, action_dim, scope):
+		self.hidden_dims = hidden_dims
+		self.action_dim = action_dim
+		self.scope = scope
+
+	def __call__(self, states):
+		with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
+			hidden = states
+			for hidden_dim in self.hidden_dims:
+				hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
+										 kernel_initializer=tf.initializers.variance_scaling())
+			mean = tf.layers.dense(hidden, self.action_dim, activation=tf.nn.softplus,
+								   kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3))
+			var = tf.layers.dense(hidden, self.action_dim, activation=tf.nn.softplus,
+								   kernel_initializer=tf.initializers.random_uniform(minval=-3e-3, maxval=3e-3))
+			return mean, var
+
 class VNetwork(object):
 	def __init__(self, hidden_dims, scope):
 		self.hidden_dims = hidden_dims
@@ -129,6 +147,7 @@ class A2C(object):
 			alpha, beta = actor_output[0], actor_output[1]
 			action_loglikelihood = (alpha-1.)*tf.log(actions+e[:, None])+(beta-1.)*tf.log(1-actions+e[:, None])
 			action_loglikelihood += -tf.math.lgamma(alpha)-tf.math.lgamma(beta)+tf.math.lgamma(alpha+beta)
+			action_loglikelihood = tf.reduce_sum(action_loglikelihood, axis=1)[:, None]
 		elif isinstance(self.actor, Actor_):
 			e = (tf.ones(batch_size)*1e-12)[:, None]
 			batch_indices = tf.range(batch_size,dtype=tf.int32)[:, None]
@@ -136,12 +155,18 @@ class A2C(object):
 			logits = actor_output
 			logpi = tf.log(tf.nn.softmax(logits, axis=-1)+e)
 			action_loglikelihood = tf.gather_nd(logpi, action_indices)
+		elif isinstance(self.actor, GaussianActor):
+			e = (tf.ones(batch_size)*1e-12)[:, None]
+			mean, var = actor_output[0], actor_output[1]
+			action_loglikelihood = -0.5*tf.log(2*np.pi*var)
+			action_loglikelihood += -0.5*tf.pow(actions-mean, 2)/var
+			action_loglikelihood = tf.reduce_sum(action_loglikelihood, axis=1)[:, None]
 		else:
 			raise NotImplementedError
 		return action_loglikelihood
 	
 	def get_policy_entropy(self, actor_output):
-		batch_size = tf.shape(actor_output)[0]
+		batch_size = tf.shape(actor_output[0])[0]
 		if isinstance(self.actor, BetaActor):
 			alpha, beta = actor_output[0], actor_output[1]
 			entropy = tf.math.lbeta(tf.concat([alpha, beta], axis=1))[:, None]
@@ -154,6 +179,11 @@ class A2C(object):
 			pi = tf.nn.softmax(logits, axis=-1)
 			logpi = tf.log(tf.nn.softmax(logits, axis=-1)+e)
 			entropy = -tf.reduce_sum(pi*logpi, axis=1)[:, None]
+			return entropy
+		elif isinstance(self.actor, GaussianActor):
+			mean, var = actor_output[0], actor_output[1]
+			e = (tf.ones(batch_size)*1e-12)[:, None]
+			entropy = tf.log(e+tf.sqrt(2*np.pi*np.e*var))
 			return entropy
 		else:
 			raise NotImplementedError
@@ -173,6 +203,12 @@ class A2C(object):
 			pi /= np.sum(pi)
 			action = np.random.choice(np.arange(self.n_action), size=None,
 									  replace=True, p=pi)
+		elif isinstance(self.actor, GaussianActor):
+			mean = self.actor_output[0].eval(feed_dict=feed_dict).squeeze(axis=0)
+			var = self.actor_output[1].eval(feed_dict=feed_dict).squeeze(axis=0)
+			action = np.random.normal(loc=mean, scale=np.sqrt(var))
+			action = np.maximum(action, self.action_upper_limit)
+			action = np.minimum(action, self.action_lower_limit)
 		return action
 
 	def build_loss(self):
@@ -279,7 +315,7 @@ class A2C(object):
 					   * np.pad(returns[self.N:], (0, self.N), 'constant', constant_values=(0))
 
 		return returns, nexts, are_non_terminal
-	
+
 	def collect_trajectory(self):
 		states, actions, rewards = self.generate_episode()
 		states = np.array(states)

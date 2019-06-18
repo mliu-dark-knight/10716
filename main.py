@@ -35,7 +35,8 @@ def parse_arguments():
 	parser.add_argument('--actor-lr', default=1e-4, type=float, help='Actor learning rate')
 	parser.add_argument('--critic-lr', default=1e-4, type=float, help='Critic learning rate')
 	parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
-	parser.add_argument('--batch-size', default=256, type=int)
+	parser.add_argument('--batch-size', default=64, type=int)
+	parser.add_argument('--horrizon', default=2048, type=int)
 	parser.add_argument('--step', default=3, type=int, help='Number of gradient descent steps per episode')
 	parser.add_argument('--epsilon', default=0.2, type=float, help='Exploration noise, fixed in D4PG')
 	parser.add_argument('--train-episodes', default=100, type=int, help='Number of episodes to train')
@@ -108,11 +109,11 @@ if __name__ == '__main__':
 			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N)
 		elif args.model == 'PPO':
 			agent = PPO(environment, args.hidden_dims, gamma=args.gamma, lambd=args.lambd,
-			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N)
+			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, horrizon=args.horrizon)
 		elif args.model == 'QRPPO':
 			agent = QRPPO(environment, args.hidden_dims, gamma=args.gamma, lambd=args.lambd,
 			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, kappa=args.kappa,
-			               n_quantile=args.n_quantile)
+			               n_quantile=args.n_quantile, horrizon=args.horrizon)
 		else:
 			raise NotImplementedError
 
@@ -132,7 +133,7 @@ if __name__ == '__main__':
 				progress_fd = open(progress_file, 'a')
 		else:
 			progress_fd = open(progress_file, 'w')
-			append_summary(progress_fd, 'episode, total-reward, actor-loss, critic-loss')
+			append_summary(progress_fd, 'episode, total-reward')
 			progress_fd.flush()
 			start_episode = 0
 			tf.global_variables_initializer().run()
