@@ -94,8 +94,9 @@ class PPO(A2C):
         ratio = tf.exp(action_loglikelihood-old_action_loglikelihood)
         pg_loss = tf.minimum(ratio*self.advantages, tf.clip_by_value(ratio, 0.8, 1.2)*self.advantages)
         #self.actor_loss = -tf.reduce_mean(pg_loss)
-        entropy = self.get_policy_entropy(self.actor_output)
-        self.actor_loss = -tf.reduce_mean(pg_loss+1e-2*entropy)
+        #entropy = self.get_policy_entropy(self.actor_output)
+        #self.actor_loss = -tf.reduce_mean(pg_loss+1e-2*entropy)
+        self.actor_loss = -tf.reduce_mean(pg_loss)
 
     def build_loss(self):
         self.value = self.critic(self.states)
@@ -176,7 +177,6 @@ class PPO(A2C):
             rewards = np.array(rewards)
             nexts = states[1:].copy()
             are_non_terminal = np.ones(len(nexts))
-            total_rewards.append(sum(rewards))
             feed_dict = {self.states: states[:-1], self.rewards: rewards,
                         self.nexts: nexts, self.are_non_terminal: are_non_terminal}
             target_value, value = sess.run([self.target_value, self.value], feed_dict=feed_dict)
@@ -190,7 +190,7 @@ class PPO(A2C):
         #return states[:-1], actions, returns, nexts, are_non_terminal, total_reward
         assert len(states_mem)  == len(actions_mem) and \
                len(actions_mem) == len(returns_mem)
-        advantages_mem = (advantages_mem - advantages_mem.mean())/advantages_mem.std()
+        #advantages_mem = (advantages_mem - advantages_mem.mean())/advantages_mem.std()
         return states_mem, actions_mem, returns_mem, advantages_mem, total_rewards
     
     def generate_episode(self, render=False):
