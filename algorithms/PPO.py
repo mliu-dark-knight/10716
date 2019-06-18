@@ -62,8 +62,8 @@ class PPO(A2C):
     def build_critic_loss(self):
         self.compute_return()
         self.value = self.critic(self.states)
-        self.critic_loss = tf.losses.huber_loss(self.returns, self.value)
-        self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")
+        self.critic_loss = tf.losses.mean_squared_error(self.returns, self.value)
+        #self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")
         self.target_value = tf.stop_gradient(self.rewards[:,None]+self.are_non_terminal[:, None] * \
                    np.power(self.gamma, self.N) * self.critic(self.nexts))
 
@@ -77,7 +77,9 @@ class PPO(A2C):
         ratio = tf.exp(action_loglikelihood-old_action_loglikelihood)
         advantage = tf.stop_gradient(self.compute_gae(self.value, self.target_value))
         pg_loss = tf.minimum(ratio*advantage, tf.clip_by_value(ratio, 0.8, 1.2)*advantage)
-        self.actor_loss = -tf.reduce_mean(pg_loss)
+        #self.actor_loss = -tf.reduce_mean(pg_loss)
+        entropy = self.get_policy_entropy(self.actor_output)
+        self.actor_loss = -tf.reduce_mean(pg_loss+1e-2*entropy)
 
     def build_step(self):
         def clip_grad_by_global_norm(grad_var, max_norm):
@@ -89,43 +91,69 @@ class PPO(A2C):
         self.global_step = tf.Variable(0, trainable=False)
         actor_optimizer = tf.train.AdamOptimizer(learning_rate=self.actor_lr)
         with tf.control_dependencies([tf.Assert(tf.is_finite(self.actor_loss), [self.actor_loss])]):
-            gvs = actor_optimizer.compute_gradients(self.actor_loss,
-               var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
-            clipped_grad_var = clip_grad_by_global_norm(gvs, 0.5)
-            self.actor_step = actor_optimizer.apply_gradients(clipped_grad_var)
-            #self.actor_step = actor_optimizer.minimize(
-            #    self.actor_loss,
-            #    var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
+            #gvs = actor_optimizer.compute_gradients(self.actor_loss,
+            #   var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
+            #clipped_grad_var = clip_grad_by_global_norm(gvs, 0.5)
+            #self.actor_step = actor_optimizer.apply_gradients(clipped_grad_var)
+            self.actor_step = actor_optimizer.minimize(
+                self.actor_loss,
+                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
         critic_optimizer = tf.train.AdamOptimizer(learning_rate=self.critic_lr)
         with tf.control_dependencies([tf.Assert(tf.is_finite(self.critic_loss), [self.critic_loss])]):
-            #self.critic_step = critic_optimizer.minimize(
-            #    self.critic_loss,
-            #    var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
-            #    global_step=self.global_step)
-            gvs = critic_optimizer.compute_gradients(self.critic_loss,
-                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'))
-            clipped_grad_var = clip_grad_by_global_norm(gvs, 0.5)
-            self.critic_step = actor_optimizer.apply_gradients(clipped_grad_var)
+            self.critic_step = critic_optimizer.minimize(
+                self.critic_loss,
+                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
+                global_step=self.global_step)
+            #gvs = critic_optimizer.compute_gradients(self.critic_loss,
+            #    var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'))
+            #clipped_grad_var = clip_grad_by_global_norm(gvs, 0.5)
+            #self.critic_step = actor_optimizer.apply_gradients(clipped_grad_var)
     
     def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
-              train_episodes=1000, save_episodes=100, epsilon=0.3, apply_her=False, n_goals=10, reward_scaling=1.):
+              train_episodes=1000, save_episodes=100, epsilon=0.3, apply_her=False, n_goals=10, train_steps=-1):
         total_rewards = []
         sess.run([self.init_actor])
-        for i_episode in tqdm(range(train_episodes), ncols=100):
-            states, actions, returns, nexts, are_non_terminal, total_reward = self.collect_trajectory()
-            feed_dict = {self.states: states, self.actions: actions, self.rewards: reward_scaling*returns,
-                         self.nexts: nexts, self.are_non_terminal: are_non_terminal, self.training: True}
-            total_rewards.append(total_reward)
-            perm = np.random.permutation(len(states))
-            for s in range(step):
-                sess.run([self.actor_step], feed_dict=feed_dict)
-            sess.run([self.update_actor])
-            for s in range(3*step):
-                sess.run([self.critic_step], feed_dict=feed_dict)
-            critic_loss = self.critic_loss.eval(feed_dict=feed_dict).mean()
-            actor_loss = self.actor_loss.eval(feed_dict=feed_dict).mean()
-            append_summary(progress_fd, str(start_episode + i_episode) + ",{0:.2f}".format(total_reward)\
-                +",{0:.8f}".format(actor_loss)+",{0:.4f}".format(critic_loss))
-            if (i_episode + 1) % save_episodes == 0:
-                saver.save(sess, model_path)
+        n_step = 0
+        if train_episodes > 0:
+            for i_episode in tqdm(range(train_episodes), ncols=100):
+                states, actions, returns, nexts, are_non_terminal, total_reward = self.collect_trajectory()
+                feed_dict = {self.states: states, self.actions: actions, self.rewards: returns,
+                            self.nexts: nexts, self.are_non_terminal: are_non_terminal, self.training: True}
+                total_rewards.append(total_reward)
+                perm = np.random.permutation(len(states))
+                for s in range(step):
+                    sess.run([self.actor_step], feed_dict=feed_dict)
+                sess.run([self.update_actor])
+                for s in range(3*step):
+                    sess.run([self.critic_step], feed_dict=feed_dict)
+                critic_loss = self.critic_loss.eval(feed_dict=feed_dict).mean()
+                actor_loss = self.actor_loss.eval(feed_dict=feed_dict).mean()
+                n_step += len(states)
+                append_summary(progress_fd, str(start_episode + i_episode) + ",{0:.2f}".format(total_reward)\
+                    +",{0:.8f}".format(actor_loss)+",{0:.4f}".format(critic_loss)+",{}".format(n_step))
+                if (i_episode + 1) % save_episodes == 0:
+                    saver.save(sess, model_path)
+        else:
+            pbar = tqdm(total=train_steps)
+            i_episode = 0
+            while n_step < train_steps:
+                states, actions, returns, nexts, are_non_terminal, total_reward = self.collect_trajectory()
+                feed_dict = {self.states: states, self.actions: actions, self.rewards: returns,
+                            self.nexts: nexts, self.are_non_terminal: are_non_terminal, self.training: True}
+                total_rewards.append(total_reward)
+                perm = np.random.permutation(len(states))
+                for s in range(step):
+                    sess.run([self.actor_step], feed_dict=feed_dict)
+                sess.run([self.update_actor])
+                for s in range(3*step):
+                    sess.run([self.critic_step], feed_dict=feed_dict)
+                critic_loss = self.critic_loss.eval(feed_dict=feed_dict).mean()
+                actor_loss = self.actor_loss.eval(feed_dict=feed_dict).mean()
+                n_step += len(states)
+                i_episode += 1
+                append_summary(progress_fd, str(start_episode + i_episode) + ",{0:.2f}".format(total_reward)\
+                    +",{0:.8f}".format(actor_loss)+",{0:.4f}".format(critic_loss)+",{}".format(n_step))
+                if (i_episode + 1) % save_episodes == 0:
+                    saver.save(sess, model_path)
+                pbar.update(len(states))
         return total_rewards

@@ -139,6 +139,24 @@ class A2C(object):
 		else:
 			raise NotImplementedError
 		return action_loglikelihood
+	
+	def get_policy_entropy(self, actor_output):
+		batch_size = tf.shape(actor_output)[0]
+		if isinstance(self.actor, BetaActor):
+			alpha, beta = actor_output[0], actor_output[1]
+			entropy = tf.math.lbeta(tf.concat([alpha, beta], axis=1))[:, None]
+			entropy -= (alpha-1.)*tf.math.digamma(alpha)
+			entropy -= (beta-1.)*tf.math.digamma(beta)
+			entropy += (alpha+beta-2)*tf.math.digamma(alpha+beta)
+			return entropy
+		elif isinstance(self.actor, Actor_):
+			logits = actor_output
+			pi = tf.nn.softmax(logits, axis=-1)
+			logpi = tf.log(tf.nn.softmax(logits, axis=-1)+e)
+			entropy = -tf.reduce_sum(pi*logpi, axis=1)[:, None]
+			return entropy
+		else:
+			raise NotImplementedError
 
 	def sample_action(self, states):
 		feed_dict = {self.states: states.reshape(1, -1), self.training: False}
@@ -265,14 +283,14 @@ class A2C(object):
 	def collect_trajectory(self):
 		states, actions, rewards = self.generate_episode()
 		states = np.array(states)
-		returns, nexts, are_non_terminal = self.normalize_returns(states[1:],
-																  rewards)
+		#returns, nexts, are_non_terminal = self.normalize_returns(states[1:],
+		#														  rewards)
+		nexts = states[1:].copy()
+		are_non_terminal = np.ones(len(nexts))
+		are_non_terminal[-1] = 0
 		total_reward = sum(rewards)
-		actions = np.array(actions)
-		if self.action_type == "continuous":
-			actions += (self.action_upper_limit + self.action_lower_limit)/2.
-			actions /= self.action_upper_limit - self.action_lower_limit
-		return states[:-1], actions, returns, nexts, are_non_terminal, total_reward
+		#return states[:-1], actions, returns, nexts, are_non_terminal, total_reward
+		return states[:-1], actions, rewards, nexts, are_non_terminal, total_reward
 	
 	def generate_episode(self, render=False):
 		states = []
@@ -294,6 +312,10 @@ class A2C(object):
 				break
 		states.append(state)
 
+		actions = np.array(actions)
+		if isinstance(self.actor, BetaActor):
+			actions += (self.action_upper_limit + self.action_lower_limit)/2.
+			actions /= self.action_upper_limit - self.action_lower_limit
 		assert len(states)  == len(actions)+1 and \
 			   len(actions) == len(rewards)
 		return states, actions, rewards

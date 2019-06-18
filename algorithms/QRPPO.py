@@ -80,7 +80,7 @@ class QRPPO(PPO):
         quantile_huber_loss = (tf.abs(quantiles - tf.stop_gradient(tf.to_float(errors < 0))) * huber_loss) / \
                               self.kappa
         self.critic_loss = tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=1), axis=0)
-        self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")
+        #self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")
         self.target_Z =  tf.stop_gradient(self.rewards[:,None]+self.are_non_terminal[:, None] * \
                    np.power(self.gamma, self.N) * self.critic(self.nexts))
         self.target_value = self.get_mean(self.target_Z)
@@ -98,4 +98,6 @@ class QRPPO(PPO):
         ratio = tf.exp(action_loglikelihood-old_action_loglikelihood)
         advantage = tf.stop_gradient(self.compute_gae(self.value[:, None], self.target_value[:, None]))
         pg_loss = tf.minimum(ratio*advantage, tf.clip_by_value(ratio, 0.8, 1.2)*advantage)
-        self.actor_loss = -tf.reduce_mean(pg_loss)
+        
+        entropy = self.get_policy_entropy(self.actor_output)
+        self.actor_loss = -tf.reduce_mean(pg_loss+1e-2*entropy)
