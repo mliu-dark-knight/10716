@@ -188,6 +188,11 @@ class A2C(object):
 		else:
 			raise NotImplementedError
 
+	def convert_action_for_beta_actor(self, actions):
+		actions -= self.action_lower_limit
+		actions /= self.action_upper_limit - self.action_lower_limit
+		return actions
+
 	def sample_action(self, states):
 		feed_dict = {self.states: states.reshape(1, -1), self.training: False}
 		
@@ -196,7 +201,7 @@ class A2C(object):
 			beta = self.actor_output[1].eval(feed_dict=feed_dict).squeeze(axis=0)
 			action = np.random.beta(alpha, beta)
 			action *= self.action_upper_limit - self.action_lower_limit
-			action -= (self.action_upper_limit + self.action_lower_limit)/2.
+			action += self.action_lower_limit
 		elif isinstance(self.actor, Actor_):
 			logits = self.actor_output.eval(feed_dict=feed_dict).squeeze(axis=0)
 			pi = np.exp(logits - np.max(logits))
@@ -350,8 +355,7 @@ class A2C(object):
 
 		actions = np.array(actions)
 		if isinstance(self.actor, BetaActor):
-			actions += (self.action_upper_limit + self.action_lower_limit)/2.
-			actions /= self.action_upper_limit - self.action_lower_limit
+			actions = self.convert_action_for_beta_actor(actions)
 		assert len(states)  == len(actions)+1 and \
 			   len(actions) == len(rewards)
 		return states, actions, rewards

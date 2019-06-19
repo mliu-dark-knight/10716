@@ -90,13 +90,12 @@ class PPO(A2C):
     def build_actor_loss(self):
         self.actor_output = self.actor(self.states)
         action_loglikelihood = self.get_action_loglikelihood(self.actor_output, self.actions)
-        old_action_loglikelihood = self.get_action_loglikelihood(self.actor_target(self.states), self.actions)
+        old_action_loglikelihood = tf.stop_gradient(self.get_action_loglikelihood(self.actor_target(self.states), self.actions))
         ratio = tf.exp(action_loglikelihood-old_action_loglikelihood)
         pg_loss = tf.minimum(ratio*self.advantages, tf.clip_by_value(ratio, 0.8, 1.2)*self.advantages)
         #self.actor_loss = -tf.reduce_mean(pg_loss)
-        #entropy = self.get_policy_entropy(self.actor_output)
-        #self.actor_loss = -tf.reduce_mean(pg_loss+1e-2*entropy)
-        self.actor_loss = -tf.reduce_mean(pg_loss)
+        entropy = self.get_policy_entropy(self.actor_output)
+        self.actor_loss = -tf.reduce_mean(pg_loss+1e-2*entropy)
 
     def build_loss(self):
         self.value = self.critic(self.states)
@@ -141,14 +140,12 @@ class PPO(A2C):
 
                 actions = np.array(actions)
                 if isinstance(self.actor, BetaActor):
-                    actions += (self.action_upper_limit + self.action_lower_limit)/2.
-                    actions /= self.action_upper_limit - self.action_lower_limit
+                    actions = self.convert_action_for_beta_actor(actions)
                 states = np.array(states)
                 rewards = np.array(rewards)
                 nexts = states[1:].copy()
                 are_non_terminal = np.ones(len(nexts))
                 are_non_terminal[-1] = 0
-                #total_rewards.append(sum(rewards))
                 feed_dict = {self.states: states[:-1], self.rewards: rewards,
                             self.nexts: nexts, self.are_non_terminal: are_non_terminal, self.training: True}
                 target_value, value = sess.run([self.target_value, self.value], feed_dict=feed_dict)
@@ -167,13 +164,11 @@ class PPO(A2C):
                 states = []
                 actions = []
                 rewards = []
-        if not self.env_info['done']:
-            '''
+        if not self.env_info['done'] and len(actions)>0:
             states.append(state)
             actions = np.array(actions)
             if isinstance(self.actor, BetaActor):
-                actions += (self.action_upper_limit + self.action_lower_limit)/2.
-                actions /= self.action_upper_limit - self.action_lower_limit
+                actions = self.convert_action_for_beta_actor(actions)
             states = np.array(states)
             rewards = np.array(rewards)
             nexts = states[1:].copy()
@@ -183,16 +178,23 @@ class PPO(A2C):
             target_value, value = sess.run([self.target_value, self.value], feed_dict=feed_dict)
             advantages = self.compute_gae(target_value, value)
             returns = self.compute_return(rewards)
-            states_mem = np.concatenate([states_mem, states[:-1]], axis=0)
-            returns_mem = np.concatenate([returns_mem, returns], axis=0)
-            advantages_mem = np.concatenate([advantages_mem, advantages], axis=0)
-            actions_mem = np.concatenate([actions_mem, actions], axis=0)'''
-            self.env_info['done'] = True
+
+            if states_mem is None:
+                states_mem = states[:-1]
+                returns_mem = returns
+                advantages_mem = advantages
+                actions_mem = actions
+            else:
+                states_mem = np.concatenate([states_mem, states[:-1]], axis=0)
+                returns_mem = np.concatenate([returns_mem, returns], axis=0)
+                advantages_mem = np.concatenate([advantages_mem, advantages], axis=0)
+                actions_mem = np.concatenate([actions_mem, actions], axis=0)
+            #self.env_info['done'] = True
 
         #return states[:-1], actions, returns, nexts, are_non_terminal, total_reward
         assert len(states_mem)  == len(actions_mem) and \
                len(actions_mem) == len(returns_mem)
-        #advantages_mem = (advantages_mem - advantages_mem.mean())/advantages_mem.std()
+        advantages_mem = (advantages_mem - advantages_mem.mean())/advantages_mem.std()
         return states_mem, actions_mem, returns_mem, advantages_mem, total_rewards
     
     def generate_episode(self, render=False):
@@ -217,8 +219,7 @@ class PPO(A2C):
 
         actions = np.array(actions)
         if isinstance(self.actor, BetaActor):
-            actions += (self.action_upper_limit + self.action_lower_limit)/2.
-            actions /= self.action_upper_limit - self.action_lower_limit
+            actions = self.convert_action_for_beta_actor(actions)
         assert len(states)  == len(actions)+1 and \
                len(actions) == len(rewards)
         return states, actions, rewards
@@ -239,7 +240,6 @@ class PPO(A2C):
                 #feed_dict = {self.states: states, self.actions: actions, self.rewards: returns,
                 #            self.nexts: nexts, self.are_non_terminal: are_non_terminal, self.training: True}
                 states_mem, actions_mem, returns_mem, advantage_mem, total_reward = self.collect_transitions(sess)
-                
                 for s in range(step):
                     perm = np.random.permutation(len(states_mem))
                     for sample_id in range(0, len(perm), batch_size):
