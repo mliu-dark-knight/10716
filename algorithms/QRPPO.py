@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 from algorithms.common import *
 from algorithms.PPO import PPO
-from algorithms.A2C import Actor_, BetaActor
+from algorithms.A2C import Actor_, BetaActor, GaussianActor
 from algorithms.QRA2C import QRVNetwork, QRVNetworkNoCrossing
 from utils import append_summary
 import gym
@@ -24,10 +24,8 @@ class QRPPO(PPO):
     def build_actor(self):
         if self.action_type == "discrete":
             self.actor = Actor_(self.hidden_dims, self.n_action, self.scope_pre+'actor')
-            self.actor_target = Actor_(self.hidden_dims, self.n_action, self.scope_pre+'target_actor')
         else:
-            self.actor = BetaActor(self.hidden_dims, self.n_action, self.scope_pre+'actor')
-            self.actor_target = BetaActor(self.hidden_dims, self.n_action, self.scope_pre+'target_actor')
+            self.actor = GaussianActor(self.hidden_dims, self.n_action, self.scope_pre+'actor')
 
     def build_critic(self):
         self.critic = QRVNetworkNoCrossing(self.hidden_dims, self.n_quantile, self.scope_pre+'critic')
@@ -60,6 +58,9 @@ class QRPPO(PPO):
         self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")'''
 
     def build_critic_loss(self):
+        self.Z = self.critic(self.states)
+        self.values = self.get_mean(self.Z)[:, None]
+
         errors = self.returns - self.Z
         huber_loss_case_one = tf.to_float(tf.abs(errors) <= self.kappa) * 0.5 * errors ** 2
         huber_loss_case_two = tf.to_float(tf.abs(errors) > self.kappa) * self.kappa * \
@@ -70,14 +71,10 @@ class QRPPO(PPO):
                               self.kappa
         self.critic_loss = tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=1), axis=0)
         #self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")
-        self.critic_loss += tf.losses.mean_squared_error(self.returns, self.value)
+        #self.critic_loss += tf.losses.mean_squared_error(self.returns, self.value)
+        #self.critic_loss += tf.losses.huber_loss(self.returns, self.values)
 
     def build_loss(self):
-        self.Z = self.critic(self.states)
-        self.value = self.get_mean(self.Z)[:, None]
-        self.target_Z =  tf.stop_gradient(self.rewards[:,None]+self.are_non_terminal[:, None] * \
-                   np.power(self.gamma, self.N) * self.critic(self.nexts))
-        self.target_value = self.get_mean(self.target_Z)[:, None]
         self.build_critic_loss()
         self.build_actor_loss()        
         
