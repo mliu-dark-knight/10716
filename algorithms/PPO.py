@@ -121,7 +121,6 @@ class PPO(A2C):
             prev_value = values[i]
             prev_advantage = advantages[i]
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-9)
-        self.env_info['done'] = True
         return states[:-1], actions, action_loglikelihood, returns, advantages, np.mean(total_rewards)
     
     def generate_episode(self, render=False):

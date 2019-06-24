@@ -33,12 +33,18 @@ class QRVNetworkNoCrossing(object):
         with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
             hidden = states
             for hidden_dim in self.hidden_dims:
-                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.tanh,
-                                         kernel_initializer=tf.initializers.orthogonal())
-            base = tf.layers.dense(hidden, 1, activation=None, use_bias=False,
-                                   kernel_initializer=tf.initializers.orthogonal())
-            quantiles = tf.layers.dense(hidden, self.n_quantile-1, activation=tf.nn.relu, use_bias=False,
-                                        kernel_initializer=tf.initializers.orthogonal())
+                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
+                                         kernel_initializer=tf.initializers.orthogonal(),
+                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+            base = tf.layers.dense(hidden, 1, activation=None,
+                                   kernel_initializer=tf.initializers.orthogonal(),
+                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+            quantiles = tf.layers.dense(hidden, self.n_quantile-1, activation=tf.nn.relu,
+                                        kernel_initializer=tf.initializers.orthogonal(),
+                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
             out = tf.concat([base, quantiles], axis=1)
             out = tf.math.cumsum(out, axis=1)
             return out

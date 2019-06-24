@@ -1,5 +1,6 @@
 import os
 import argparse
+from collections import defaultdict
 
 def parse_arguments():
 	parser = argparse.ArgumentParser()
@@ -8,10 +9,13 @@ def parse_arguments():
 
 if __name__ == '__main__':
 	args = parse_arguments()
-	algorithms = ["PPO", "QRPPO"]
-	#envs = ["Hopper-v2", "InvertedPendulum-v2", "InvertedDoublePendulum-v2", "HalfCheetah-v2"]
-	envs = ["Hopper-v2", "InvertedPendulum-v2"]
-	#n_steps = {"Hopper-v3": 1000000, "InvertedDoublePendulum-v2": 1000000, }
+	algorithms = ["SQRPPO"]
+	#algorithms = ["PPO", "QRPPO"]
+	#envs = ["HalfCheetah-v2"]
+	#envs = ["Hopper-v2", "InvertedPendulum-v2"]
+	train_episodes = defaultdict(lambda x: 1000)
+	train_episodes["HalfCheetah-v2"] = 3000
+	envs = ["InvertedPendulum-v2", "HalfCheetah-v2","Hopper-v2",  "InvertedDoublePendulum-v2"]
 	for env in envs:
 		for algo in algorithms:
 			print("************************")

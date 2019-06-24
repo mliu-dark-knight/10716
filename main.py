@@ -12,6 +12,7 @@ from algorithms.QRA2C import QRA2C
 from algorithms.A2C import A2C
 from algorithms.PPO import PPO
 from algorithms.QRPPO import QRPPO
+from algorithms.SQRPPO import SQRPPO
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 from collections import defaultdict
@@ -30,10 +31,11 @@ def parse_arguments():
 	parser.add_argument('--gamma', default=0.99, type=float, help='Reward discount')
 	parser.add_argument('--lambd', default=0.95, type=float, help='discount for gae')
 	parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
-	parser.add_argument('--kappa', default=1e-6, type=float, help='Kappa used in quantile Huber loss')
+	parser.add_argument('--kappa', default=1, type=float, help='Kappa used in quantile Huber loss')
 	parser.add_argument('--n-quantile', default=200, type=int, help='Number of quantile to approximate distribution')
-	parser.add_argument('--actor-lr', default=3e-4, type=float, help='Actor learning rate')
-	parser.add_argument('--critic-lr', default=3e-4, type=float, help='Critic learning rate')
+	parser.add_argument('--actor-lr', default=2.5e-4, type=float, help='Actor learning rate')
+	parser.add_argument('--critic-lr', default=2.5e-4, type=float, help='Critic learning rate')
+	parser.add_argument('--quantile', default=0.5, type=float, help='Quantile for SQRPPO')
 	parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
 	parser.add_argument('--batch-size', default=64, type=int)
 	parser.add_argument('--horrizon', default=2048, type=int)
@@ -114,6 +116,10 @@ if __name__ == '__main__':
 			agent = QRPPO(environment, args.hidden_dims, gamma=args.gamma, lambd=args.lambd,
 			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, kappa=args.kappa,
 			               n_quantile=args.n_quantile, horrizon=args.horrizon)
+		elif args.model == 'SQRPPO':
+			agent = SQRPPO(environment, args.hidden_dims, gamma=args.gamma, lambd=args.lambd,
+			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, kappa=args.kappa,
+			               quantile=args.quantile, horrizon=args.horrizon)
 		else:
 			raise NotImplementedError
 
