@@ -7,3 +7,4 @@
 plot/*
 exp-*
 .ipynb_checkpoints/*
+env_spec/*

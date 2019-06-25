@@ -37,18 +37,6 @@ class QRPPO(PPO):
         Z = (part1+4.*part2+part3)/3.
         return tf.reduce_mean(Z, axis=1)
 
-    def get_huber_quantile_regression_loss(self, Z1, Z2):
-        errors = tf.expand_dims(Z1, axis=2) - tf.expand_dims(Z2, axis=1)
-        huber_loss_case_one = tf.to_float(tf.abs(errors) <= self.kappa) * 0.5 * errors ** 2
-        huber_loss_case_two = tf.to_float(tf.abs(errors) > self.kappa) * self.kappa * \
-                              (tf.abs(errors) - 0.5 * self.kappa)
-        huber_loss = huber_loss_case_one + huber_loss_case_two
-        quantiles = tf.expand_dims(tf.expand_dims(tf.range(0.5 / self.n_quantile, 1., 1. / self.n_quantile), axis=0),
-                                   axis=1)
-        quantile_huber_loss = (tf.abs(quantiles - tf.stop_gradient(tf.to_float(errors < 0))) * huber_loss) / \
-                              self.kappa
-        return tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=2), axis=1)
-
     '''def build_critic_loss(self):
         self.target_Z = tf.stop_gradient(self.rewards[:,None]+self.are_non_terminal[:, None] * \
                    np.power(self.gamma, self.N) * self.critic_target(self.nexts))

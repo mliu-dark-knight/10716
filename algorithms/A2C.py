@@ -97,16 +97,20 @@ class A2C(object):
     Advantage is estimated as V(next)-V(current)+reward.
     '''
     def __init__(self, env, hidden_dims, gamma=0.99, tau=1e-2,
-                 actor_lr=1e-3, critic_lr=1e-3, N=5, scope_pre = ""):
+                 actor_lr=1e-3, critic_lr=1e-3, N=5, scope_pre = "", is_env_pool=False):
         self.env = env
+        self.is_env_pool = is_env_pool
+        if self.is_env_pool:
+            self.env_pool = self.env
+            self.env = self.env_pool.sample_env()
         self.hidden_dims = hidden_dims
-        self.state_dim = reduce(mul,env.observation_space.shape)
-        if isinstance(env.action_space, gym.spaces.box.Box):
+        self.state_dim = reduce(mul,self.env.observation_space.shape)
+        if isinstance(self.env.action_space, gym.spaces.box.Box):
             self.action_type = "continuous"
-            self.n_action = env.action_space.shape[0]
-            self.action_upper_limit = env.action_space.high
-            self.action_lower_limit = env.action_space.low
-        elif isinstance(env.action_space, gym.spaces.discrete.Discrete):
+            self.n_action = self.env.action_space.shape[0]
+            self.action_upper_limit = self.env.action_space.high
+            self.action_lower_limit = self.env.action_space.low
+        elif isinstance(self.env.action_space, gym.spaces.discrete.Discrete):
             self.action_type = "discrete"
             self.n_action = env.action_space.n
         else:
@@ -353,6 +357,8 @@ class A2C(object):
         states = []
         actions = []
         rewards = []
+        if self.is_env_pool:
+            self.env = self.env_pool.sample_env()
         state = self.env.reset()
         while True:
             action = self.sample_action(state)

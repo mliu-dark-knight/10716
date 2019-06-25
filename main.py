@@ -3,7 +3,7 @@ import os
 import gym
 import numpy as np
 import tensorflow as tf
-
+import time
 from algorithms.DDPG import DDPG
 from algorithms.QRDDPG import QRDDPG
 from algorithms.D3PG import D3PG
@@ -16,6 +16,7 @@ from algorithms.SQRPPO import SQRPPO
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 from collections import defaultdict
+from customized_mujoco import GaussianHalfCheetahEnv, GaussianAntEnv
 
 def parse_arguments():
 	parser = argparse.ArgumentParser()
@@ -78,8 +79,16 @@ if __name__ == '__main__':
 	if args.env in ['FetchReach-v1', 'FetchSlide-v1', 'FetchPush-v1', 'FetchPickAndPlace-v1',
 	                         'HandReach-v0', 'HandManipulateBlock-v0', 'HandManipulateEgg-v0', 'HandManipulatePen-v0']:
 		environment = gym.make(args.env, reward_type=args.reward_type)
+		is_env_pool = False
+	elif args.env in ['GaussianHalfCheetah', 'GaussianAnt']:
+		is_env_pool = True
+		if args.env == 'GaussianHalfCheetah':
+			environment = GaussianHalfCheetahEnv(file_buffer_name="customized_half_cheetah_{}.xml".format(int(time.time())))
+		else:
+			environment = GaussianAntEnv(file_buffer_name="customized_half_ant_{}.xml".format(int(time.time())))
 	else:
 		environment = gym.make(args.env)
+		is_env_pool = False
 
 	tf.reset_default_graph()
 	with tf.device(device):
@@ -108,18 +117,18 @@ if __name__ == '__main__':
 			               n_quantile=args.n_quantile)
 		elif args.model == 'A2C':
 			agent = A2C(environment, args.hidden_dims, gamma=args.gamma,
-			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N)
+			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, is_env_pool=args.is_env_pool)
 		elif args.model == 'PPO':
 			agent = PPO(environment, args.hidden_dims, gamma=args.gamma, lambd=args.lambd,
-			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, horrizon=args.horrizon)
+			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, horrizon=args.horrizon, is_env_pool=is_env_pool)
 		elif args.model == 'QRPPO':
 			agent = QRPPO(environment, args.hidden_dims, gamma=args.gamma, lambd=args.lambd,
 			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, kappa=args.kappa,
-			               n_quantile=args.n_quantile, horrizon=args.horrizon)
+			               n_quantile=args.n_quantile, horrizon=args.horrizon, is_env_pool=is_env_pool)
 		elif args.model == 'SQRPPO':
 			agent = SQRPPO(environment, args.hidden_dims, gamma=args.gamma, lambd=args.lambd,
 			               actor_lr=args.actor_lr, critic_lr=args.critic_lr, tau=args.tau, N=args.N, kappa=args.kappa,
-			               quantile=args.quantile, horrizon=args.horrizon)
+			               quantile=args.quantile, horrizon=args.horrizon, is_env_pool=is_env_pool)
 		else:
 			raise NotImplementedError
 

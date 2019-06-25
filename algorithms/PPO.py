@@ -13,12 +13,13 @@ class PPO(A2C):
     '''
     Implement PPO algorithm.
     '''
-    def __init__(self, *args, lambd=0.95, horrizon=2048, **kwargs):
+    def __init__(self, *args, lambd=0.95, horrizon=2048,  **kwargs):
         self.lambd = lambd
         self.horrizon = horrizon
         self.env_info = {'done': True, 'last_state': None, 'total_reward': 0}
         super(PPO, self).__init__(*args, **kwargs)
         self.running_state = ZFilter((self.state_dim, ), clip=5)
+        
         
 
     def build_placeholder(self):
@@ -78,6 +79,8 @@ class PPO(A2C):
         action_loglikelihood = np.zeros((self.horrizon, 1))
         for step in range(self.horrizon):
             if self.env_info['done']:
+                if self.is_env_pool:
+                    self.env = self.env_pool.sample_env()
                 state = self.env.reset()
                 state = self.running_state(state)
                 self.env_info['last_state'] = state
@@ -127,6 +130,8 @@ class PPO(A2C):
         states = []
         actions = []
         rewards = []
+        if self.is_env_pool:
+            self.env = self.env_pool.sample_env()
         state = self.env.reset()
         while True:
             action, _ = self.sample_action(state)
