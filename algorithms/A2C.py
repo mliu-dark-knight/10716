@@ -31,6 +31,22 @@ class Actor_(object):
             return tf.layers.dense(hidden, self.action_dim, activation=None,
                                    kernel_initializer=tf.initializers.orthogonal())
 
+class DirichletActor(object):
+    def __init__(self, hidden_dims, action_dim, scope):
+        self.hidden_dims = hidden_dims
+        self.action_dim = action_dim
+        self.scope = scope
+
+    def __call__(self, states):
+        with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
+            hidden = states
+            for hidden_dim in self.hidden_dims:
+                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.tanh,
+                                         kernel_initializer=tf.initializers.orthogonal())
+            alpha = tf.layers.dense(hidden, self.action_dim, activation=tf.nn.softplus,
+                                  kernel_initializer=tf.initializers.orthogonal())
+            return alpha
+
 class BetaActor(object):
     def __init__(self, hidden_dims, action_dim, scope):
         self.hidden_dims = hidden_dims

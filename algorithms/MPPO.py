@@ -9,22 +9,6 @@ from utils import append_summary
 import collections
 from scipy.special import loggamma 
 
-class DirichletActor(object):
-    def __init__(self, hidden_dims, action_dim, scope):
-        self.hidden_dims = hidden_dims
-        self.action_dim = action_dim
-        self.scope = scope
-
-    def __call__(self, states):
-        with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
-            hidden = states
-            for hidden_dim in self.hidden_dims:
-                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.tanh,
-                                         kernel_initializer=tf.initializers.orthogonal())
-            alpha = tf.layers.dense(hidden, self.action_dim, activation=tf.nn.softplus,
-                                  kernel_initializer=tf.initializers.orthogonal())
-            return alpha
-
 class MPPO(object):
     '''Multi-agent Proximal Policy Gradient.'''
     def __init__(self, env, hidden_dims,  gamma=0.99,
@@ -54,7 +38,23 @@ class MPPO(object):
         self.values_list = []
         self.actor_output_list = []
         self.build()
-        
+    
+    def save_state_filter(self, path):
+        shape = self.running_state_list[0].rs._M.shape[0]
+        nms = np.zeros((self.n_agent, 3, shape))
+        for agent_id in range(self.n_agent):
+            nms[agent_id, 0, 0] = self.running_state_list[agent_id].rs._n
+            nms[agent_id, 1] = self.running_state_list[agent_id].rs._M
+            nms[agent_id, 2] = self.running_state_list[agent_id].rs._S
+        np.save(path, nms)
+
+    def load_state_filter(self, path):
+        nms = np.load(path)
+        for agent_id in range(self.n_agent):
+            self.running_state_list[agent_id].rs._n = nms[agent_id, 0, 0]
+            self.running_state_list[agent_id].rs._M = nms[agent_id, 1]
+            self.running_state_list[agent_id].rs._S = nms[agent_id, 2]
+
     def build(self):
         self.build_actor()
         self.build_critic()
@@ -89,8 +89,6 @@ class MPPO(object):
             agent_states = self.states[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
             values = self.critic_list[agent_id](agent_states)
             self.values_list.append(values)
-            #self.critic_loss_list.append(0.5*tf.losses.mean_squared_error(self.returns[:, agent_id][:, None],self.values_list[agent_id])\
-            #    +tf.losses.get_regularization_loss(scope="critic_{}".format(agent_id)))
             self.critic_loss_list.append(0.5*tf.losses.mean_squared_error(self.returns[:, agent_id][:, None],self.values_list[agent_id]))
     
     def get_agent_action_loglikelihood(self, agent_actions, actor_output):
@@ -153,7 +151,7 @@ class MPPO(object):
             #tf.summary.scalar('actor_loss_{}'.format(agent), self.actor_loss_list[agent])
         self.merged_summary_op = tf.summary.merge_all()
 
-    def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
+    def train(self, sess, saver, summary_writer, progress_fd, model_path, filter_path, batch_size=64, step=10, start_episode=0,
               train_episodes=1000, save_episodes=100, max_episode_len=25, **kargs):
         total_rewards = []
         n_step = 0
@@ -169,14 +167,16 @@ class MPPO(object):
                                  self.returns: returns_mem[perm[sample_id: sample_id+batch_size]],
                                  self.advantages: advantage_mem[perm[sample_id: sample_id+batch_size]],
                                  self.training: True}
-                    sess.run(self.actor_step_list+self.critic_step_list, feed_dict=feed_dict)
+                    #sess.run(self.actor_step_list+self.critic_step_list, feed_dict=feed_dict)
+                    sess.run(self.actor_step_list, feed_dict=feed_dict)
+                    for j in range(5):
+                        sess.run(self.critic_step_list, feed_dict=feed_dict)
             n_step += len(states_mem)
-            #critic_loss, actor_loss = sess.run([self.critic_loss_list[0], self.actor_loss_list[0]], feed_dict=feed_dict)
-            #append_summary(progress_fd, str(start_episode+i_episode) + ",{0:.2f}".format(epi_avg_reward)+ ",{}".format(n_step)+ ",{}".format(critic_loss)+ ",{}".format(actor_loss))
             append_summary(progress_fd, str(start_episode+i_episode) + ",{0:.2f}".format(epi_avg_reward)+ ",{}".format(n_step))
             total_rewards.append(epi_avg_reward)
             if (i_episode + 1) % save_episodes == 0:
                 saver.save(sess, model_path)
+                self.save_state_filter(filter_path)
         return total_rewards
 
     def sample_action(self, sess, states, agent_id):
@@ -220,7 +220,7 @@ class MPPO(object):
                 for agent_id in range(self.n_agent):
                     obs_start = sum(self.state_dim[:agent_id])
                     obs_end = sum(self.state_dim[:agent_id+1])
-                    #state[obs_start:obs_end] = self.running_state_list[agent_id](state[obs_start:obs_end])
+                    state[obs_start:obs_end] = self.running_state_list[agent_id](state[obs_start:obs_end])
                 self.env_info['last_state'] = state
                 self.env_info['done'] = False
                 self.env_info['total_reward'] = 0
@@ -239,7 +239,7 @@ class MPPO(object):
             for agent_id in range(self.n_agent):
                 obs_start = sum(self.state_dim[:agent_id])
                 obs_end = sum(self.state_dim[:agent_id+1])
-                #state[obs_start:obs_end] = self.running_state_list[agent_id](state[obs_start:obs_end])
+                state[obs_start:obs_end] = self.running_state_list[agent_id](state[obs_start:obs_end])
             self.env_info['last_state'] = state
             self.env_info['total_reward'] += reward[0]
             rewards[step]=reward
@@ -273,7 +273,7 @@ class MPPO(object):
                 prev_return = returns[i, agent_id]
                 prev_value = agent_values[i]
                 prev_advantage = advantages[i, agent_id]
-            #advantages[:, agent_id] = (advantages[:, agent_id] - advantages[:, agent_id].mean()) / (advantages[:, agent_id].std() + 1e-9)
+            advantages[:, agent_id] = (advantages[:, agent_id] - advantages[:, agent_id].mean()) / (advantages[:, agent_id].std() + 1e-9)
         return states[:-1], actions, actions_loglikelihood, returns, advantages, np.mean(total_rewards)
     
     def generate_episode(self, sess, render=False,
