@@ -43,33 +43,32 @@ class BetaActor(object):
             for hidden_dim in self.hidden_dims:
                 hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.tanh,
                                          kernel_initializer=tf.initializers.orthogonal())
-            #alpha = tf.layers.dense(hidden, self.action_dim, activation=tf.nn.softplus,
-            #                      kernel_initializer=tf.initializers.orthogonal(), use_bias=False)
-            #beta = tf.layers.dense(hidden, self.action_dim, activation=tf.nn.softplus,
-            #                      kernel_initializer=tf.initializers.orthogonal(), use_bias=False)
-            #return alpha+1, beta+1
-            log_alpha = tf.layers.dense(hidden, self.action_dim, activation=None,
-                                   kernel_initializer=tf.initializers.orthogonal(), use_bias=False)
-            log_beta = tf.layers.dense(hidden, self.action_dim, activation=None,
-                                   kernel_initializer=tf.initializers.orthogonal(), use_bias=False)
-            return tf.exp(log_alpha)+1, tf.exp(log_beta)+1
+            alpha = tf.layers.dense(hidden, self.action_dim, activation=tf.nn.softplus,
+                                  kernel_initializer=tf.initializers.orthogonal())
+            beta = tf.layers.dense(hidden, self.action_dim, activation=tf.nn.softplus,
+                                  kernel_initializer=tf.initializers.orthogonal())
+            return alpha+1, beta+1
 
 class GaussianActor(object):
     def __init__(self, hidden_dims, action_dim, scope):
         self.hidden_dims = hidden_dims
         self.action_dim = action_dim
         self.scope = scope
-        with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
-            self.log_std = tf.get_variable(name="log_std", shape=[1, self.action_dim], initializer=tf.zeros_initializer())
+        with tf.variable_scope(scope):
+            self.log_std = tf.get_variable(name=self.scope+"_log_std", shape=[1, self.action_dim], initializer=tf.zeros_initializer())
 
     def __call__(self, states):
         with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
             hidden = states
             for hidden_dim in self.hidden_dims:
                 hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.tanh,
-                                         kernel_initializer=normc_initializer())
+                                         kernel_initializer=normc_initializer(),
+                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
             mean = tf.layers.dense(hidden, self.action_dim, activation=None,
-                                   kernel_initializer=normc_initializer(0.01))
+                                   kernel_initializer=normc_initializer(0.01),
+                                    kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
             batch_size = tf.shape(states)[0]
             b = tf.ones((batch_size, 1))
             #log_std = tf.tile(self.log_std, (batch_size, 1))
@@ -86,9 +85,13 @@ class VNetwork(object):
             hidden = states
             for hidden_dim in self.hidden_dims:
                 hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.tanh,
-                                         kernel_initializer=tf.initializers.orthogonal())
+                                         kernel_initializer=tf.initializers.orthogonal(),
+                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
             hidden = tf.layers.dense(hidden, 1, activation=None,
-                                   kernel_initializer=tf.initializers.orthogonal())
+                                   kernel_initializer=tf.initializers.orthogonal(),
+                                   kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
             return hidden
 
 class A2C(object):

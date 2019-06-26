@@ -103,6 +103,7 @@ class PPO(A2C):
                 self.env_info['total_reward'] = 0
             else:
                 are_non_terminal[step] = 1
+        step += 1
         states[step]=state
         if isinstance(self.actor, BetaActor):
             actions = self.convert_action_for_beta_actor(actions)
