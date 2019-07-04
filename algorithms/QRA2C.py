@@ -30,24 +30,28 @@ class QRVNetworkNoCrossing(object):
         self.n_quantile = n_quantile
         self.scope = scope
     def __call__(self, states):
+        base, quantiles = self.dQ(states)
+        out = tf.concat([base, quantiles], axis=1)
+        out = tf.math.cumsum(out, axis=1)
+        return out
+        
+    def dQ(self, states):
         with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
             hidden = states
             for hidden_dim in self.hidden_dims:
                 hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
-                                         kernel_initializer=tf.initializers.orthogonal(),
                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
-                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         kernel_initializer=tf.initializers.orthogonal())
             base = tf.layers.dense(hidden, 1, activation=None,
-                                   kernel_initializer=tf.initializers.orthogonal(),
                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
-                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
-            quantiles = tf.layers.dense(hidden, self.n_quantile-1, activation=tf.nn.relu,
-                                        kernel_initializer=tf.initializers.orthogonal(),
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         kernel_initializer=tf.initializers.orthogonal())
+            quantiles = tf.layers.dense(hidden, self.n_quantile-1, activation=tf.nn.softplus,
                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
-                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
-            out = tf.concat([base, quantiles], axis=1)
-            out = tf.math.cumsum(out, axis=1)
-            return out
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         kernel_initializer=tf.initializers.orthogonal())
+        return base, quantiles
 
 class QRA2C(A2C):
     '''

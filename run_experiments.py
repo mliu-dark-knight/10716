@@ -6,13 +6,14 @@ def parse_arguments():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--exp-id', default=0, type=int)
 	return parser.parse_args()
-
+# 3000: 6M
+train_episodes = {"Ant-v2": 3000, "HalfCheetah-v2": 3000, "Hopper-v2": 3000, "Walker-v2": 3000, "Humanoid-v2": 3000}
 if __name__ == '__main__':
 	args = parse_arguments()
 	#algorithms = ["SQRPPO"]
-	algorithms = ["SQRPPO","PPO", "QRPPO"]
+	algorithms = ["QRPPO", "PPO"]
 	#envs = ["GaussianAnt","GaussianHalfCheetah"]
-	envs = ["Ant-v2", "HalfCheetah-v2", "GaussianAnt","GaussianHalfCheetah","Hopper-v2", "InvertedDoublePendulum-v2"]
+	envs = ["Ant-v2", "HalfCheetah-v2", "Hopper-v2", "Walker-v2", "Humanoid-v2"]
 	#envs = ["Hopper-v2", "InvertedPendulum-v2"]
 	#train_episodes = defaultdict(lambda x: 1000)
 	#train_episodes["HalfCheetah-v2"] = 3000

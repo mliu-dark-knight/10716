@@ -59,8 +59,6 @@ class PPO(A2C):
         ratio = tf.exp(action_loglikelihood-self.action_loglikelihood)
         pg_loss = tf.minimum(ratio*self.advantages, tf.clip_by_value(ratio, 0.8, 1.2)*self.advantages)
         self.actor_loss = -tf.reduce_mean(pg_loss)
-        #entropy = self.get_policy_entropy(self.actor_output)
-        #self.actor_loss = -tf.reduce_mean(pg_loss+1e-2*entropy)
 
     def build_loss(self):
         self.build_critic_loss()
@@ -125,7 +123,11 @@ class PPO(A2C):
             prev_value = values[i]
             prev_advantage = advantages[i]
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-9)
-        return states[:-1], actions, action_loglikelihood, returns, advantages, np.mean(total_rewards)
+        if len(total_rewards)>0:
+            avg_rewards = np.mean(total_rewards)
+        else:
+            avg_rewards = None
+        return states[:-1], actions, action_loglikelihood, returns, advantages, avg_rewards
     
     def generate_episode(self, render=False):
         states = []
@@ -174,12 +176,12 @@ class PPO(A2C):
         with tf.control_dependencies([tf.Assert(tf.is_finite(self.critic_loss), [self.critic_loss])]):
             gvs = critic_optimizer.compute_gradients(self.critic_loss,
                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'))
-            clipped_grad_var = clip_grad_by_global_norm(gvs, 1)
+            #clipped_grad_var = clip_grad_by_global_norm(gvs, 1)
             self.critic_step = actor_optimizer.apply_gradients(clipped_grad_var)'''
 
     def build_step(self):
         self.global_step = tf.Variable(0., trainable=False)
-        actor_lr = tf.train.polynomial_decay(self.actor_lr, self.global_step, 1000*self.horrizon, 5e-5)
+        actor_lr = tf.train.polynomial_decay(self.actor_lr, self.global_step, 6000*self.horrizon, 3e-5)
 
         actor_optimizer = tf.train.AdamOptimizer(learning_rate=actor_lr, epsilon=1e-5)
         with tf.control_dependencies([tf.Assert(tf.is_finite(self.actor_loss), [self.actor_loss])]):
@@ -187,7 +189,7 @@ class PPO(A2C):
                 self.actor_loss,
                 var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
 
-        critic_lr = tf.train.polynomial_decay(self.critic_lr, self.global_step, 1000*self.horrizon, 5e-5)
+        critic_lr = tf.train.polynomial_decay(self.critic_lr, self.global_step, 6000, 2e-4)
         critic_optimizer = tf.train.AdamOptimizer(learning_rate=critic_lr, epsilon=1e-5)
         with tf.control_dependencies([tf.Assert(tf.is_finite(self.critic_loss), [self.critic_loss])]):
             self.critic_step = critic_optimizer.minimize(
@@ -202,7 +204,7 @@ class PPO(A2C):
         i_episode = 0
         for i_episode in tqdm(range(train_episodes), ncols=100):
             states_mem, actions_mem, action_loglikelihood_mem, returns_mem, advantage_mem, epi_avg_reward = self.collect_transitions(sess)
-            #self.global_step.assign_add(self.horrizon)
+            #self.global_step.assign_add(1)
             for s in range(step):
                 perm = np.random.permutation(len(states_mem))
                 for sample_id in range(0, len(perm), batch_size):
@@ -214,8 +216,9 @@ class PPO(A2C):
                                  self.training: True}
                     sess.run([self.actor_step, self.critic_step], feed_dict=feed_dict)
             n_step += len(states_mem)
-            append_summary(progress_fd, str(start_episode+i_episode) + ",{0:.2f}".format(epi_avg_reward)+ ",{}".format(n_step))
-            total_rewards.append(epi_avg_reward)
+            if not epi_avg_reward is None:
+                append_summary(progress_fd, str(start_episode+i_episode) + ",{0:.2f}".format(epi_avg_reward)+ ",{}".format(n_step))
+                total_rewards.append(epi_avg_reward)
             if (i_episode + 1) % save_episodes == 0:
                 saver.save(sess, model_path)
         return total_rewards

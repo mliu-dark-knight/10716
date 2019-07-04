@@ -15,8 +15,6 @@ from algorithms.QRPPO import QRPPO
 from algorithms.SQRPPO import SQRPPO
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
-from collections import defaultdict
-from customized_mujoco import GaussianHalfCheetahEnv, GaussianAntEnv
 
 def parse_arguments():
 	parser = argparse.ArgumentParser()
@@ -31,14 +29,14 @@ def parse_arguments():
 	parser.add_argument('--hidden-dims', default=[64, 64], type=int, nargs='+', help='Hidden dimension of network')
 	parser.add_argument('--gamma', default=0.99, type=float, help='Reward discount')
 	parser.add_argument('--lambd', default=0.95, type=float, help='discount for gae')
-	parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
-	parser.add_argument('--kappa', default=1e-6, type=float, help='Kappa used in quantile Huber loss')
+	parser.add_argument('--tau', default=1, type=float, help='Soft parameter update tau')
+	parser.add_argument('--kappa', default=1, type=float, help='Kappa used in quantile Huber loss')
 	parser.add_argument('--n-quantile', default=200, type=int, help='Number of quantile to approximate distribution')
 	parser.add_argument('--actor-lr', default=2e-4, type=float, help='Actor learning rate')
 	parser.add_argument('--critic-lr', default=2e-4, type=float, help='Critic learning rate')
 	parser.add_argument('--quantile', default=0.5, type=float, help='Quantile for SQRPPO')
 	parser.add_argument('--n-atom', default=51, type=int, help='Number of atoms used in D3PG')
-	parser.add_argument('--batch-size', default=64, type=int)
+	parser.add_argument('--batch-size', default=512, type=int)
 	parser.add_argument('--horrizon', default=2048, type=int)
 	parser.add_argument('--step', default=10, type=int, help='Number of gradient descent steps per episode')
 	parser.add_argument('--epsilon', default=0.2, type=float, help='Exploration noise, fixed in D4PG')
@@ -54,7 +52,7 @@ def parse_arguments():
 	parser.add_argument('--model-dir', default='model', type=str)
 	parser.add_argument('--log-dir', default='log', type=str)
 	parser.add_argument('--progress-file', default='progress.csv', type=str)
-	parser.add_argument('--device', default=0, type=int, help='GPU device number')
+	parser.add_argument('--device', default=-1, type=int, help='GPU device number')
 	return parser.parse_args()
 
 
@@ -80,12 +78,14 @@ if __name__ == '__main__':
 	                         'HandReach-v0', 'HandManipulateBlock-v0', 'HandManipulateEgg-v0', 'HandManipulatePen-v0']:
 		environment = gym.make(args.env, reward_type=args.reward_type)
 		is_env_pool = False
-	elif args.env in ['GaussianHalfCheetah', 'GaussianAnt']:
+	elif args.env in ['GaussianHalfCheetah', 'GaussianAnt', 'GaussianInvertedPendulum']:
 		is_env_pool = True
 		if args.env == 'GaussianHalfCheetah':
 			environment = GaussianHalfCheetahEnv(file_buffer_name="customized_half_cheetah_{}.xml".format(int(time.time())))
-		else:
+		elif args.env == 'GaussianAnt':
 			environment = GaussianAntEnv(file_buffer_name="customized_half_ant_{}.xml".format(int(time.time())))
+		else:
+			environment = GaussianInvertedPendulumEnv(file_buffer_name="customized_inverted_pedulum_{}.xml".format(int(time.time())))
 	else:
 		environment = gym.make(args.env)
 		is_env_pool = False

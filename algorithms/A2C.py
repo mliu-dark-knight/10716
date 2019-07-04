@@ -26,7 +26,7 @@ class Actor_(object):
         with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
             hidden = states
             for hidden_dim in self.hidden_dims:
-                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
+                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.tanh,
                                          kernel_initializer=tf.initializers.orthogonal())
             return tf.layers.dense(hidden, self.action_dim, activation=None,
                                    kernel_initializer=tf.initializers.orthogonal())
@@ -77,17 +77,22 @@ class GaussianActor(object):
         with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
             hidden = states
             for hidden_dim in self.hidden_dims:
-                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.tanh,
-                                         kernel_initializer=normc_initializer(),
+                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
-                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         kernel_initializer=tf.initializers.orthogonal())
             mean = tf.layers.dense(hidden, self.action_dim, activation=None,
-                                   kernel_initializer=normc_initializer(0.01),
                                     kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
-                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         kernel_initializer=tf.initializers.orthogonal())
+            #log_std = tf.layers.dense(hidden, self.action_dim, activation=None,
+            #                        kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+            #                             bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+            #                             kernel_initializer=tf.initializers.orthogonal())
+            #log_std = tf.clip_by_value(log_std, -20, 2)
             batch_size = tf.shape(states)[0]
             b = tf.ones((batch_size, 1))
-            #log_std = tf.tile(self.log_std, (batch_size, 1))
+            log_std = tf.tile(self.log_std, (batch_size, 1))
             log_std = self.log_std*b
             return mean, log_std
 
@@ -100,7 +105,7 @@ class VNetwork(object):
         with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
             hidden = states
             for hidden_dim in self.hidden_dims:
-                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.tanh,
+                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
                                          kernel_initializer=tf.initializers.orthogonal(),
                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
                                          bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
@@ -182,7 +187,7 @@ class A2C(object):
         if isinstance(self.actor, BetaActor):
             e = tf.ones((batch_size, self.n_action))*1e-12
             alpha, beta = actor_output[0], actor_output[1]
-            action_loglikelihood = (alpha-1.)*tf.log(actions+e[:, None])+(beta-1.)*tf.log(1-actions+e[:, None])
+            action_loglikelihood = (alpha-1.)*tf.log(actions+e)+(beta-1.)*tf.log(1-actions+e)
             action_loglikelihood += -tf.math.lgamma(alpha)-tf.math.lgamma(beta)+tf.math.lgamma(alpha+beta)
             action_loglikelihood = tf.reduce_sum(action_loglikelihood, axis=1)[:, None]
         elif isinstance(self.actor, Actor_):
@@ -195,8 +200,11 @@ class A2C(object):
         elif isinstance(self.actor, GaussianActor):
             mean, log_std = actor_output[0], actor_output[1]
             std = tf.exp(log_std)
+            #actions_ = tf.tanh(actions)
             action_loglikelihood = -0.5*tf.log(2*np.pi)-log_std
             action_loglikelihood += -0.5*tf.pow((actions-mean)/std, 2)
+            #action_loglikelihood -= tf.log(1-tf.pow(tf.tanh(actions_), 2))
+            #action_loglikelihood -= tf.log(1-tf.pow(actions_, 2)+1e-6)
             action_loglikelihood = tf.reduce_sum(action_loglikelihood, axis=1)[:, None]
         else:
             raise NotImplementedError
@@ -236,6 +244,10 @@ class A2C(object):
             alpha = self.actor_output[0].eval(feed_dict=feed_dict).squeeze(axis=0)
             beta = self.actor_output[1].eval(feed_dict=feed_dict).squeeze(axis=0)
             action = np.random.beta(alpha, beta)
+            e = 1e-12
+            action_loglikelihood = (alpha-1.)*np.log(action+e)+(beta-1.)*np.log(1-action)
+            action_loglikelihood += -scipy.special.loggamma(alpha)-scipy.special.loggamma(beta)+scipy.special.loggamma(alpha+beta)
+            action_loglikelihood = np.sum(action_loglikelihood)
             action *= self.action_upper_limit - self.action_lower_limit
             action += self.action_lower_limit
         elif isinstance(self.actor, Actor_):
@@ -250,9 +262,11 @@ class A2C(object):
             log_std = self.actor_output[1].eval(feed_dict=feed_dict).squeeze(axis=0)
             std = np.exp(log_std)
             action = np.random.normal(loc=mean, scale=std)
+            action_ = np.tanh(action)
             action_loglikelihood = -0.5*np.log(2*np.pi)-log_std
             action_loglikelihood += -0.5*np.power((action-mean)/std, 2)
             action_loglikelihood = np.sum(action_loglikelihood)
+            #action_loglikelihood -= np.sum(np.log(1-np.power(action_, 2)+1e-6))
         return action, action_loglikelihood
 
     def build_loss(self):

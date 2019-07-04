@@ -167,10 +167,7 @@ class MPPO(object):
                                  self.returns: returns_mem[perm[sample_id: sample_id+batch_size]],
                                  self.advantages: advantage_mem[perm[sample_id: sample_id+batch_size]],
                                  self.training: True}
-                    #sess.run(self.actor_step_list+self.critic_step_list, feed_dict=feed_dict)
-                    sess.run(self.actor_step_list, feed_dict=feed_dict)
-                    for j in range(5):
-                        sess.run(self.critic_step_list, feed_dict=feed_dict)
+                    sess.run(self.actor_step_list+self.critic_step_list, feed_dict=feed_dict)
             n_step += len(states_mem)
             append_summary(progress_fd, str(start_episode+i_episode) + ",{0:.2f}".format(epi_avg_reward)+ ",{}".format(n_step))
             total_rewards.append(epi_avg_reward)
@@ -309,4 +306,4 @@ class MPPO(object):
         if not benchmark:
             return states, actions, rewards
         else:
-            return states, actions, rewards, info
+            return states, actions, rewards, infos

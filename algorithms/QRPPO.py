@@ -28,6 +28,8 @@ class QRPPO(PPO):
             self.actor = GaussianActor(self.hidden_dims, self.n_action, self.scope_pre+'actor')
 
     def build_critic(self):
+        #self.critic_0 = QRVNetworkNoCrossing(self.hidden_dims, self.n_quantile, self.scope_pre+'critic_0')
+        #self.critic_1 = QRVNetworkNoCrossing(self.hidden_dims, self.n_quantile, self.scope_pre+'critic_1')
         self.critic = QRVNetworkNoCrossing(self.hidden_dims, self.n_quantile, self.scope_pre+'critic')
     
     def get_mean(self, Z):
@@ -36,42 +38,54 @@ class QRPPO(PPO):
         part3 = Z[:, 2::2]
         Z = (part1+4.*part2+part3)/3.
         return tf.reduce_mean(Z, axis=1)
-
-    '''def build_critic_loss(self):
-        self.target_Z = tf.stop_gradient(self.rewards[:,None]+self.are_non_terminal[:, None] * \
-                   np.power(self.gamma, self.N) * self.critic_target(self.nexts))
-        self.Z = self.critic(states)
-        regression_loss = self.get_huber_quantile_regression_loss(self.target_Z, self.Z)
-        self.critic_loss = tf.reduce_mean(self.get_huber_quantile_regression_loss(self.target_Z, self.Z), axis=0)
-        self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")'''
-
+    
     def build_critic_loss(self):
         self.Z = self.critic(self.states)
-        self.values = self.get_mean(self.Z)[:, None]
-
+        #self.values = self.get_mean(self.Z)[:, None]
+        self.values = self.Z[:, int(self.n_quantile/2)][:, None]
         errors = self.returns - self.Z
         huber_loss_case_one = tf.to_float(tf.abs(errors) <= self.kappa) * 0.5 * errors ** 2
         huber_loss_case_two = tf.to_float(tf.abs(errors) > self.kappa) * self.kappa * \
                               (tf.abs(errors) - 0.5 * self.kappa)
         huber_loss = huber_loss_case_one + huber_loss_case_two
-        quantiles = tf.expand_dims(tf.range(0., 1., 1. / self.n_quantile), axis=0)
+        quantiles = tf.expand_dims(tf.linspace(1. / self.n_quantile, 1-1. / self.n_quantile, self.n_quantile), axis=0)
         quantile_huber_loss = (tf.abs(quantiles - tf.stop_gradient(tf.to_float(errors < 0))) * huber_loss) / \
                               self.kappa
         self.critic_loss = tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=1), axis=0)
         self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")
-        #self.critic_loss += tf.losses.mean_squared_error(self.returns, self.value)
-        #self.critic_loss += tf.losses.huber_loss(self.returns, self.values)
+        return_entropy = self.get_mean(tf.log(1e-10+self.critic.dQ(self.states)[1]))[:, None]
+        self.critic_loss -= 0.2*tf.reduce_mean(return_entropy)
 
-    def build_actor_loss(self):
-        self.actor_output = self.actor(self.states)
-        action_loglikelihood = self.get_action_loglikelihood(self.actor_output, self.actions)
-        ratio = tf.exp(action_loglikelihood-self.action_loglikelihood)
-        pg_loss = tf.minimum(ratio*self.advantages, tf.clip_by_value(ratio, 0.8, 1.2)*self.advantages)
-        self.actor_loss = -tf.reduce_mean(pg_loss)
-        #entropy = self.get_policy_entropy(self.actor_output)
-        #self.actor_loss = -tf.reduce_mean(pg_loss+1e-2*entropy)
+    '''def build_critic_loss(self):
+        Z_0 = self.critic_0(self.states)
+        values_0 = Z_0[:, int(self.n_quantile/2)]
+        errors = self.returns - Z_0
+        huber_loss_case_one = tf.to_float(tf.abs(errors) <= self.kappa) * 0.5 * errors ** 2
+        huber_loss_case_two = tf.to_float(tf.abs(errors) > self.kappa) * self.kappa * \
+                              (tf.abs(errors) - 0.5 * self.kappa)
+        huber_loss = huber_loss_case_one + huber_loss_case_two
+        quantiles = tf.expand_dims(tf.linspace(1. / self.n_quantile, 1-1. / self.n_quantile, self.n_quantile), axis=0)
+        quantile_huber_loss = (tf.abs(quantiles - tf.stop_gradient(tf.to_float(errors < 0))) * huber_loss) / \
+                              self.kappa
+        self.critic_loss = tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=1), axis=0)
+        self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic_0")
+        return_entropy = self.get_mean(tf.log(1e-10+self.critic_0.dQ(self.states)[1]))[:, None]
+        self.critic_loss -= tf.reduce_mean(return_entropy)
 
-    def build_loss(self):
-        self.build_critic_loss()
-        self.build_actor_loss()        
+        Z_1 = self.critic_1(self.states)
+        values_1 = Z_1[:, int(self.n_quantile/2)]
+        errors = self.returns - Z_1
+        huber_loss_case_one = tf.to_float(tf.abs(errors) <= self.kappa) * 0.5 * errors ** 2
+        huber_loss_case_two = tf.to_float(tf.abs(errors) > self.kappa) * self.kappa * \
+                              (tf.abs(errors) - 0.5 * self.kappa)
+        huber_loss = huber_loss_case_one + huber_loss_case_two
+        quantiles = tf.expand_dims(tf.linspace(1. / self.n_quantile, 1-1. / self.n_quantile, self.n_quantile), axis=0)
+        quantile_huber_loss = (tf.abs(quantiles - tf.stop_gradient(tf.to_float(errors < 0))) * huber_loss) / \
+                              self.kappa
+        self.critic_loss += tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=1), axis=0)
+        self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic_1")
+        return_entropy = self.get_mean(tf.log(1e-10+self.critic_1.dQ(self.states)[1]))[:, None]
+        self.critic_loss -= tf.reduce_mean(return_entropy)
+
+        self.values = tf.minimum(values_0, values_1)'''      
         
