@@ -1,14 +1,3 @@
-import numpy as np
-from gym import utils
-from gym.envs.mujoco import mujoco_env
-from gym.wrappers.time_limit import TimeLimit
-import os
-#import os.path
-
-try:
-    import mujoco_py
-except ImportError as e:
-    raise error.DependencyNotInstalled("{}. (HINT: you need to install mujoco_py, and also perform the setup instructions here: https://github.com/openai/mujoco-py/.)".format(e))
 
 def render_cheetah(size):
     xml = """ <mujoco model="cheetah">
@@ -194,221 +183,122 @@ def render_inverted_pendulum(pole_len):
 """.format(pole_len)
     return xml
 
-class CustomizedMujocoEnv(mujoco_env.MujocoEnv):
-    def __init__(self, fullpath, frame_skip, rgb_rendering_tracking=True):
-        # allow full_path to be an arbitrary path
-        if not os.path.exists(fullpath):
-            raise IOError("File %s does not exist" % fullpath)
-        self.frame_skip = frame_skip
-        self.model = mujoco_py.load_model_from_path(fullpath)
-        self.sim = mujoco_py.MjSim(self.model)
-        self.data = self.sim.data
-        self.viewer = None
-        self.rgb_rendering_tracking = rgb_rendering_tracking
-        self._viewers = {}
-        self.metadata = {
-            'render.modes': ['human', 'rgb_array', 'depth_array'],
-            'video.frames_per_second': int(np.round(1.0 / self.dt))
-        }
-        self.init_qpos = self.sim.data.qpos.ravel().copy()
-        self.init_qvel = self.sim.data.qvel.ravel().copy()
-        self._set_action_space()
-        action = self.action_space.sample()
-        observation, _reward, done, _info = self.step(action)
-        assert not done
-        self._set_observation_space(observation)
-        self.seed()
+def render_walker2d():
+    walker2d = """
+    <mujoco model="walker2d">
+      <compiler angle="degree" coordinate="global" inertiafromgeom="true"/>
+      <default>
+        <joint armature="0.01" damping=".1" limited="true"/>
+        <geom conaffinity="0" condim="3" contype="1" density="1000" friction=".7 .1 .1" rgba="0.8 0.6 .4 1"/>
+      </default>
+      <option integrator="RK4" timestep="0.002"/>
+      <worldbody>
+        <light cutoff="100" diffuse="1 1 1" dir="-0 0 -1.3" directional="true" exponent="1" pos="0 0 1.3" specular=".1 .1 .1"/>
+        <geom conaffinity="1" condim="3" name="floor" pos="0 0 0" rgba="0.8 0.9 0.8 1" size="40 40 40" type="plane" material="MatPlane"/>
+        <body name="torso" pos="0 0 1.25">
+          <camera name="track" mode="trackcom" pos="0 -3 1" xyaxes="1 0 0 0 0 1"/>
+          <joint armature="0" axis="1 0 0" damping="0" limited="false" name="rootx" pos="0 0 0" stiffness="0" type="slide"/>
+          <joint armature="0" axis="0 0 1" damping="0" limited="false" name="rootz" pos="0 0 0" ref="1.25" stiffness="0" type="slide"/>
+          <joint armature="0" axis="0 1 0" damping="0" limited="false" name="rooty" pos="0 0 1.25" stiffness="0" type="hinge"/>
+          <geom friction="0.9" fromto="0 0 1.45 0 0 1.05" name="torso_geom" size="0.05" type="capsule"/>
+          <body name="thigh" pos="0 0 1.05">
+            <joint axis="0 -1 0" name="thigh_joint" pos="0 0 1.05" range="-150 0" type="hinge"/>
+            <geom friction="0.9" fromto="0 0 1.05 0 0 0.6" name="thigh_geom" size="0.05" type="capsule"/>
+            <body name="leg" pos="0 0 0.35">
+              <joint axis="0 -1 0" name="leg_joint" pos="0 0 0.6" range="-150 0" type="hinge"/>
+              <geom friction="0.9" fromto="0 0 0.6 0 0 0.1" name="leg_geom" size="0.04" type="capsule"/>
+              <body name="foot" pos="0.2/2 0 0.1">
+                <joint axis="0 -1 0" name="foot_joint" pos="0 0 0.1" range="-45 45" type="hinge"/>
+                <geom friction="0.9" fromto="-0.0 0 0.1 0.2 0 0.1" name="foot_geom" size="0.06" type="capsule"/>
+              </body>
+            </body>
+          </body>
+          <!-- copied and then replace thigh->thigh_left, leg->leg_left, foot->foot_right -->
+          <body name="thigh_left" pos="0 0 1.05">
+            <joint axis="0 -1 0" name="thigh_left_joint" pos="0 0 1.05" range="-150 0" type="hinge"/>
+            <geom friction="0.9" fromto="0 0 1.05 0 0 0.6" name="thigh_left_geom" rgba=".7 .3 .6 1" size="0.05" type="capsule"/>
+            <body name="leg_left" pos="0 0 0.35">
+              <joint axis="0 -1 0" name="leg_left_joint" pos="0 0 0.6" range="-150 0" type="hinge"/>
+              <geom friction="0.9" fromto="0 0 0.6 0 0 0.1" name="leg_left_geom" rgba=".7 .3 .6 1" size="0.04" type="capsule"/>
+              <body name="foot_left" pos="0.2/2 0 0.1">
+                <joint axis="0 -1 0" name="foot_left_joint" pos="0 0 0.1" range="-45 45" type="hinge"/>
+                <geom friction="1.9" fromto="-0.0 0 0.1 0.2 0 0.1" name="foot_left_geom" rgba=".7 .3 .6 1" size="0.06" type="capsule"/>
+              </body>
+            </body>
+          </body>
+        </body>
+      </worldbody>
+      <actuator>
+        <!-- <motor joint="torso_joint" ctrlrange="-100.0 100.0" isctrllimited="true"/>-->
+        <motor ctrllimited="true" ctrlrange="-1.0 1.0" gear="100" joint="thigh_joint"/>
+        <motor ctrllimited="true" ctrlrange="-1.0 1.0" gear="100" joint="leg_joint"/>
+        <motor ctrllimited="true" ctrlrange="-1.0 1.0" gear="100" joint="foot_joint"/>
+        <motor ctrllimited="true" ctrlrange="-1.0 1.0" gear="100" joint="thigh_left_joint"/>
+        <motor ctrllimited="true" ctrlrange="-1.0 1.0" gear="100" joint="leg_left_joint"/>
+        <motor ctrllimited="true" ctrlrange="-1.0 1.0" gear="100" joint="foot_left_joint"/>
+        <!-- <motor joint="finger2_rot" ctrlrange="-20.0 20.0" isctrllimited="true"/>-->
+      </actuator>
+        <asset>
+            <texture type="skybox" builtin="gradient" rgb1=".4 .5 .6" rgb2="0 0 0"
+                width="100" height="100"/>
+            <texture builtin="flat" height="1278" mark="cross" markrgb="1 1 1" name="texgeom" random="0.01" rgb1="0.8 0.6 0.4" rgb2="0.8 0.6 0.4" type="cube" width="127"/>
+            <texture builtin="checker" height="100" name="texplane" rgb1="0 0 0" rgb2="0.8 0.8 0.8" type="2d" width="100"/>
+            <material name="MatPlane" reflectance="0.5" shininess="1" specular="1" texrepeat="60 60" texture="texplane"/>
+            <material name="geom" texture="texgeom" texuniform="true"/>
+        </asset>
+    </mujoco>
+    """
+    return walker2d
 
-
-class CustomizedHalfCheetahEnv(CustomizedMujocoEnv, utils.EzPickle):
-    def __init__(self, size, file_name='customized_half_cheetah.xml'):
-        if not os.path.exists('env_spec'):
-            os.mkdir('env_spec')
-        self.model_path = os.path.join('env_spec', file_name)
-        f = open(self.model_path, 'w')
-        f.write(render_cheetah(size=size))
-        f.close()
-        CustomizedMujocoEnv.__init__(self, self.model_path, 5)
-        utils.EzPickle.__init__(self)
-
-    def step(self, action):
-        xposbefore = self.sim.data.qpos[0]
-        self.do_simulation(action, self.frame_skip)
-        xposafter = self.sim.data.qpos[0]
-        ob = self._get_obs()
-        reward_ctrl = - 0.1 * np.square(action).sum()
-        reward_run = (xposafter - xposbefore)/self.dt
-        reward = reward_ctrl + reward_run
-        done = False
-        return ob, reward, done, dict(reward_run=reward_run, reward_ctrl=reward_ctrl)
-
-    def _get_obs(self):
-        return np.concatenate([
-            self.sim.data.qpos.flat[1:],
-            self.sim.data.qvel.flat,
-        ])
-
-    def reset_model(self):
-        qpos = self.init_qpos + self.np_random.uniform(low=-.1, high=.1, size=self.model.nq)
-        qvel = self.init_qvel + self.np_random.randn(self.model.nv) * .1
-        self.set_state(qpos, qvel)
-        return self._get_obs()
-
-    def viewer_setup(self):
-        self.viewer.cam.distance = self.model.stat.extent * 0.5
-
-class CustomizedAntEnv(CustomizedMujocoEnv, utils.EzPickle):
-    def __init__(self,  size, file_name='customized_ant.xml'):
-        if not os.path.exists('env_spec'):
-            os.mkdir('env_spec')
-        self.model_path = os.path.join('env_spec', file_name)
-        f = open(self.model_path, 'w')
-        f.write(render_ant(size=size))
-        f.close()
-        CustomizedMujocoEnv.__init__(self, self.model_path, 5)
-        utils.EzPickle.__init__(self)
-
-    def step(self, a):
-        xposbefore = self.get_body_com("torso")[0]
-        self.do_simulation(a, self.frame_skip)
-        xposafter = self.get_body_com("torso")[0]
-        forward_reward = (xposafter - xposbefore)/self.dt
-        ctrl_cost = .5 * np.square(a).sum()
-        contact_cost = 0.5 * 1e-3 * np.sum(
-            np.square(np.clip(self.sim.data.cfrc_ext, -1, 1)))
-        survive_reward = 1.0
-        reward = forward_reward - ctrl_cost - contact_cost + survive_reward
-        state = self.state_vector()
-        notdone = np.isfinite(state).all() \
-            and state[2] >= 0.2 and state[2] <= 1.0
-        done = not notdone
-        ob = self._get_obs()
-        return ob, reward, done, dict(
-            reward_forward=forward_reward,
-            reward_ctrl=-ctrl_cost,
-            reward_contact=-contact_cost,
-            reward_survive=survive_reward)
-
-    def _get_obs(self):
-        return np.concatenate([
-            self.sim.data.qpos.flat[2:],
-            self.sim.data.qvel.flat,
-            np.clip(self.sim.data.cfrc_ext, -1, 1).flat,
-        ])
-
-    def reset_model(self):
-        qpos = self.init_qpos + self.np_random.uniform(size=self.model.nq, low=-.1, high=.1)
-        qvel = self.init_qvel + self.np_random.randn(self.model.nv) * .1
-        self.set_state(qpos, qvel)
-        return self._get_obs()
-
-    def viewer_setup(self):
-        self.viewer.cam.distance = self.model.stat.extent * 0.5
-
-class CustomizedInvertedPendulumEnv(CustomizedMujocoEnv, utils.EzPickle):
-    def __init__(self, pole_len,  file_name='customized_ant.xml'):
-        if not os.path.exists('env_spec'):
-            os.mkdir('env_spec')
-        self.model_path = os.path.join('env_spec', file_name)
-        f = open(self.model_path, 'w')
-        f.write(render_inverted_pendulum(pole_len=pole_len))
-        f.close()
-        CustomizedMujocoEnv.__init__(self, self.model_path, 2)
-        utils.EzPickle.__init__(self)
-
-    def step(self, a):
-        reward = 1.0
-        self.do_simulation(a, self.frame_skip)
-        ob = self._get_obs()
-        notdone = np.isfinite(ob).all() and (np.abs(ob[1]) <= .2)
-        done = not notdone
-        return ob, reward, done, {}
-
-    def reset_model(self):
-        qpos = self.init_qpos + self.np_random.uniform(size=self.model.nq, low=-0.01, high=0.01)
-        qvel = self.init_qvel + self.np_random.uniform(size=self.model.nv, low=-0.01, high=0.01)
-        self.set_state(qpos, qvel)
-        return self._get_obs()
-
-    def _get_obs(self):
-        return np.concatenate([self.sim.data.qpos, self.sim.data.qvel]).ravel()
-
-    def viewer_setup(self):
-        v = self.viewer
-        v.cam.trackbodyid = 0
-        v.cam.distance = self.model.stat.extent
-
-class CustomizedEnvSpec(object):
-
-    def __init__(self, max_episode_steps=None):      
-        self.max_episode_steps = max_episode_steps
-
-    def make(self, **kwargs):
-        """Instantiates an instance of the environment with appropriate kwargs"""
-        if self._entry_point is None:
-            raise error.Error('Attempting to make deprecated env {}. (HINT: is there a newer registered version of this env?)'.format(self.id))
-        _kwargs = self._kwargs.copy()
-        _kwargs.update(kwargs)
-        if callable(self._entry_point):
-            env = self._entry_point(**_kwargs)
-        else:
-            cls = load(self._entry_point)
-            env = cls(**_kwargs)
-
-        # Make the enviroment aware of which spec it came from.
-        env.unwrapped.spec = self
-
-        return env
-
-class GaussianEnvPool(object):
-    def __init__(self, file_buffer_name, scale=0.1):
-        self.envs = []
-        self.scale = scale
-        self.file_buffer_name = file_buffer_name
-        self.cur_env = None
-    def sample_env(self):
-        pass
-
-class GaussianHalfCheetahEnv(GaussianEnvPool):
-    def __init__(self, *args,**kwargs):
-        super(GaussianHalfCheetahEnv, self).__init__(*args, **kwargs)
-
-    def sample_env(self):
-        size = np.random.normal(loc=[0.046]*6, scale=[self.scale]*6)
-        size = np.random.normal(loc=[0.046]*6, scale=[self.scale]*6)
-        size = np.minimum(size, 0.046-5*self.scale)
-        size = np.maximum(size, 0.046+5*self.scale)
-        env = CustomizedHalfCheetahEnv(size, self.file_buffer_name)
-        env.unwrapped.spec = CustomizedEnvSpec(999)
-        env = TimeLimit(env, max_episode_steps=999)
-        self.cur_env = env
-        return env
-
-class GaussianAntEnv(GaussianEnvPool):
-    def __init__(self, *args,**kwargs):
-        super(GaussianAntEnv, self).__init__(*args, **kwargs)
-        self.original_damping = 1
-
-    def sample_env(self):
-        #damping = np.random.normal(loc=0, scale=self.scale)+self.original_damping
-        #damping = np.minimum(damping, self.original_damping-5*self.scale)
-        #damping = np.maximum(damping, self.original_damping+5*self.scale)
-        damping = 0.4*np.random.random()-0.2+self.original_damping
-        env = CustomizedAntEnv(damping, self.file_buffer_name)
-        env.unwrapped.spec = CustomizedEnvSpec(999)
-        env = TimeLimit(env, max_episode_steps=999)
-        self.cur_env = env
-        return env
-
-class GaussianInvertedPendulumEnv(GaussianEnvPool):
-    def __init__(self, *args,**kwargs):
-        super(GaussianInvertedPendulumEnv, self).__init__(*args, **kwargs)
-        self.original_len = 0.3
-
-    def sample_env(self):
-        pole_len = 0.5*np.random.random()-0.25+self.original_len
-        env = CustomizedInvertedPendulumEnv(pole_len, self.file_buffer_name)
-        env.unwrapped.spec = CustomizedEnvSpec(999)
-        env = TimeLimit(env, max_episode_steps=999)
-        self.cur_env = env
-        return env
+def render_hopper():
+    hopper = """
+    <mujoco model="hopper">
+      <compiler angle="degree" coordinate="global" inertiafromgeom="true"/>
+      <default>
+        <joint armature="1" damping="1" limited="true"/>
+        <geom conaffinity="1" condim="1" contype="1" margin="0.001" material="geom" rgba="0.8 0.6 .4 1" solimp=".8 .8 .01" solref=".02 1"/>
+        <motor ctrllimited="true" ctrlrange="-.4 .4"/>
+      </default>
+      <option integrator="RK4" timestep="0.002"/>
+      <visual>
+        <map znear="0.02"/>
+      </visual>
+      <worldbody>
+        <light cutoff="100" diffuse="1 1 1" dir="-0 0 -1.3" directional="true" exponent="1" pos="0 0 1.3" specular=".1 .1 .1"/>
+        <geom conaffinity="1" condim="3" name="floor" pos="0 0 0" rgba="0.8 0.9 0.8 1" size="20 20 .125" type="plane" material="MatPlane"/>
+        <body name="torso" pos="0 0 1.25">
+          <camera name="track" mode="trackcom" pos="0 -3 1" xyaxes="1 0 0 0 0 1"/>
+          <joint armature="0" axis="1 0 0" damping="0" limited="false" name="rootx" pos="0 0 0" stiffness="0" type="slide"/>
+          <joint armature="0" axis="0 0 1" damping="0" limited="false" name="rootz" pos="0 0 0" ref="1.25" stiffness="0" type="slide"/>
+          <joint armature="0" axis="0 1 0" damping="0" limited="false" name="rooty" pos="0 0 1.25" stiffness="0" type="hinge"/>
+          <geom friction="0.9" fromto="0 0 1.45 0 0 1.05" name="torso_geom" size="0.05" type="capsule"/>
+          <body name="thigh" pos="0 0 1.05">
+            <joint axis="0 -1 0" name="thigh_joint" pos="0 0 1.05" range="-150 0" type="hinge"/>
+            <geom friction="0.9" fromto="0 0 1.05 0 0 0.6" name="thigh_geom" size="0.05" type="capsule"/>
+            <body name="leg" pos="0 0 0.35">
+              <joint axis="0 -1 0" name="leg_joint" pos="0 0 0.6" range="-150 0" type="hinge"/>
+              <geom friction="0.9" fromto="0 0 0.6 0 0 0.1" name="leg_geom" size="0.04" type="capsule"/>
+              <body name="foot" pos="0.13/2 0 0.1">
+                <joint axis="0 -1 0" name="foot_joint" pos="0 0 0.1" range="-45 45" type="hinge"/>
+                <geom friction="2.0" fromto="-0.13 0 0.1 0.26 0 0.1" name="foot_geom" size="0.06" type="capsule"/>
+              </body>
+            </body>
+          </body>
+        </body>
+      </worldbody>
+      <actuator>
+        <motor ctrllimited="true" ctrlrange="-1.0 1.0" gear="200.0" joint="thigh_joint"/>
+        <motor ctrllimited="true" ctrlrange="-1.0 1.0" gear="200.0" joint="leg_joint"/>
+        <motor ctrllimited="true" ctrlrange="-1.0 1.0" gear="200.0" joint="foot_joint"/>
+      </actuator>
+        <asset>
+            <texture type="skybox" builtin="gradient" rgb1=".4 .5 .6" rgb2="0 0 0"
+                width="100" height="100"/>
+            <texture builtin="flat" height="1278" mark="cross" markrgb="1 1 1" name="texgeom" random="0.01" rgb1="0.8 0.6 0.4" rgb2="0.8 0.6 0.4" type="cube" width="127"/>
+            <texture builtin="checker" height="100" name="texplane" rgb1="0 0 0" rgb2="0.8 0.8 0.8" type="2d" width="100"/>
+            <material name="MatPlane" reflectance="0.5" shininess="1" specular="1" texrepeat="60 60" texture="texplane"/>
+            <material name="geom" texture="texgeom" texuniform="true"/>
+        </asset>
+    </mujoco>
+    """
+    return hopper

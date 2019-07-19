@@ -16,9 +16,10 @@ class QRPPO(PPO):
     Implement off-policy A2C algorithm.
     Advantage is estimated as V(next)-V(current)+reward.
     '''
-    def __init__(self, *args,kappa=1.0, n_quantile=64, **kwargs):
+    def __init__(self, *args,kappa=1.0, n_quantile=64, entropy_scale=0.2, **kwargs):
         self.kappa = kappa
         self.n_quantile = n_quantile
+        self.entropy_scale = entropy_scale
         super(QRPPO, self).__init__(*args, **kwargs)
 
     def build_actor(self):
@@ -51,10 +52,10 @@ class QRPPO(PPO):
         quantiles = tf.expand_dims(tf.linspace(1. / self.n_quantile, 1-1. / self.n_quantile, self.n_quantile), axis=0)
         quantile_huber_loss = (tf.abs(quantiles - tf.stop_gradient(tf.to_float(errors < 0))) * huber_loss) / \
                               self.kappa
-        self.critic_loss = tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=1), axis=0)
+        self.critic_loss = tf.reduce_mean(tf.reduce_mean(quantile_huber_loss, axis=1), axis=0)
         self.critic_loss += tf.losses.get_regularization_loss(scope=self.scope_pre+"critic")
         return_entropy = self.get_mean(tf.log(1e-10+self.critic.dQ(self.states)[1]))[:, None]
-        self.critic_loss -= 0.2*tf.reduce_mean(return_entropy)
+        self.critic_loss -= self.entropy_scale*tf.reduce_mean(return_entropy)
 
     '''def build_critic_loss(self):
         Z_0 = self.critic_0(self.states)

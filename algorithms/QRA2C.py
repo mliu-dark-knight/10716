@@ -47,7 +47,7 @@ class QRVNetworkNoCrossing(object):
                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
                                          bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
                                          kernel_initializer=tf.initializers.orthogonal())
-            quantiles = tf.layers.dense(hidden, self.n_quantile-1, activation=tf.nn.softplus,
+            quantiles = tf.layers.dense(hidden, self.n_quantile-1, activation=tf.nn.relu,
                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
                                          bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
                                          kernel_initializer=tf.initializers.orthogonal())

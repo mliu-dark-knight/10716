@@ -158,7 +158,7 @@ class PPO(A2C):
                len(actions) == len(rewards)
         return states, actions, rewards
 
-    '''def build_step(self):
+    def build_step(self):
         def clip_grad_by_global_norm(grad_var, max_norm):
             grad_var = list(zip(*grad_var))
             grad, var = grad_var[0], grad_var[1]
@@ -170,16 +170,16 @@ class PPO(A2C):
         with tf.control_dependencies([tf.Assert(tf.is_finite(self.actor_loss), [self.actor_loss])]):
             gvs = actor_optimizer.compute_gradients(self.actor_loss,
                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
-            clipped_grad_var = clip_grad_by_global_norm(gvs, 1)
+            clipped_grad_var = clip_grad_by_global_norm(gvs, 0.5)
             self.actor_step = actor_optimizer.apply_gradients(clipped_grad_var)
         critic_optimizer = tf.train.AdamOptimizer(learning_rate=self.critic_lr, epsilon=1e-5)
         with tf.control_dependencies([tf.Assert(tf.is_finite(self.critic_loss), [self.critic_loss])]):
             gvs = critic_optimizer.compute_gradients(self.critic_loss,
                var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'))
-            #clipped_grad_var = clip_grad_by_global_norm(gvs, 1)
-            self.critic_step = actor_optimizer.apply_gradients(clipped_grad_var)'''
+            clipped_grad_var = clip_grad_by_global_norm(gvs, 0.5)
+            self.critic_step = actor_optimizer.apply_gradients(clipped_grad_var)
 
-    def build_step(self):
+    '''def build_step(self):
         self.global_step = tf.Variable(0., trainable=False)
         actor_lr = tf.train.polynomial_decay(self.actor_lr, self.global_step, 6000*self.horrizon, 3e-5)
 
@@ -195,7 +195,7 @@ class PPO(A2C):
             self.critic_step = critic_optimizer.minimize(
                 self.critic_loss,
                 var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
-                global_step=self.global_step)
+                global_step=self.global_step)'''
     
     def train(self, sess, saver, summary_writer, progress_fd, model_path, batch_size=64, step=10, start_episode=0,
               train_episodes=1000, save_episodes=100, epsilon=0.3, apply_her=False, n_goals=10, train_steps=-1):
