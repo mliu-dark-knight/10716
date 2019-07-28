@@ -2,8 +2,7 @@ from algorithms.DDPG import *
 
 
 class QRCritic(object):
-	def __init__(self, action_dim, hidden_dims, n_quantile, scope):
-		self.action_dim = action_dim
+	def __init__(self, hidden_dims, n_quantile, scope):
 		self.hidden_dims = hidden_dims
 		self.n_quantile = n_quantile
 		self.scope = scope
