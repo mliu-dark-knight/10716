@@ -150,14 +150,8 @@ if __name__ == '__main__':
                 for epi in tqdm(range(n_epi), ncols=100):
                     states, actions, rewards, info = agent.generate_episode(sess, max_episode_len=args.max_episode_len,benchmark=args.benchmark)
                     infos+=info
-                occ = []
-                for info in infos:
-                    agents_info = info['n']
-                    for agent_info in agents_info:
-                        occ.append(agent_info[3])
                 with open(os.path.join(log_path, "benchmark.pkl"),"wb") as f:
                     pickle.dump(infos, f)
-                print(sum(occ)/(len(occ)))
             else:
                 states, actions, rewards = agent.generate_episode(sess, max_episode_len=args.max_episode_len,
                                     render=True,benchmark=args.benchmark)

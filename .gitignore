@@ -8,3 +8,4 @@ plot/*
 exp-*
 .ipynb_checkpoints/*
 env_spec/*
+run_experiments.py
