@@ -71,20 +71,21 @@ class GaussianActor(object):
         self.action_dim = action_dim
         self.scope = scope
         with tf.variable_scope(scope):
-            self.log_std = tf.get_variable(name=self.scope+"_log_std", shape=[1, self.action_dim], initializer=tf.zeros_initializer())
+            self.log_std = tf.get_variable(name=self.scope+"_log_std", shape=[1, self.action_dim], initializer=tf.zeros_initializer(), regularizer=tf.contrib.layers.l2_regularizer(1e-3))
 
     def __call__(self, states):
         with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
             hidden = states
             for hidden_dim in self.hidden_dims:
-                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
+                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.tanh,
                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
                                          bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
                                          kernel_initializer=tf.initializers.orthogonal())
             mean = tf.layers.dense(hidden, self.action_dim, activation=None,
                                     kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
                                          bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
-                                         kernel_initializer=tf.initializers.orthogonal())
+                                         kernel_initializer=tf.initializers.orthogonal(),
+                                         use_bias=False)
             #log_std = tf.layers.dense(hidden, self.action_dim, activation=None,
             #                        kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
             #                             bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),

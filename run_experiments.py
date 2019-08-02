@@ -10,25 +10,31 @@ def parse_arguments():
 # 3000: 6M
 train_episodes = defaultdict(lambda : 500)
 train_episodes["Ant-v2"] = 1500
-
-
+# exp-0 100 quantile 1 kappa
+# exp-1 200 quantile 1 kappa
+# exp-2 100 quantile 0.01 kappa
+# exp-3 200 quantile 0.01 kappa
+# exp-4 200 quantile 0.01 kappa hidden-dims 256
+# exp-5 100 quantile 0.01 kappa no l2 reg
+# exp-6 MSQRPPO 0.01 kappa no l2 reg
+# exp-7 100 quantile 0.02 kappa SMQRPPO
 if __name__ == '__main__':
 	args = parse_arguments()
-	algorithms = ["QRPPO","PPO"]
+	algorithms = ["MSQRPPO"]
 	# "PartiallyObservableAnt",    "PartiallyObservableHalfCheetah"
-	envs = [ "Walker2d-v2","Ant-v2","HalfCheetah-v2", "Hopper-v2" ]
+	envs = [ "simple_tag" ]
 	#envs = [ "PartiallyObservableWalker2d","PartiallyObservableAnt", "PartiallyObservableHalfCheetah", "PartiallyObservableHopper" ]
 	for env in envs:
 		for algo in algorithms:
 			print("************************")
 			print("Running {} on {}.".format(algo, env))
 			print("************************")
-			cmd = "python main.py --env {}".format(env)
+			cmd = "python mpe_main.py --env {}".format(env)
 			cmd += " --model {}".format(algo)
-			cmd += " --train-episodes {}".format(train_episodes[env])
+			cmd += " --train-episodes {}".format(6000)
 			cmd += " --log-dir exp-{}-log".format(args.exp_id)
 			cmd += " --model-dir exp-{}-model".format(args.exp_id)
 			cmd += " --plot-dir exp-{}-plot".format(args.exp_id)
-			#cmd += " --actor-lr {} --critic-lr {}".format(args.lr, args.lr)
+			cmd += " --n-quantile 100 --step 1 --kappa 0.01"
 
 			os.system(cmd)

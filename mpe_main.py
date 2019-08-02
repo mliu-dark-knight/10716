@@ -4,14 +4,15 @@ import numpy as np
 import tensorflow as tf
 from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
-from algorithms.QRDQN import QRDQN, MultiagentWrapper
+from algorithms.QRDDPG import QRDDPG, MultiagentWrapper
 from algorithms.MSQRPPO import MSQRPPO
 from algorithms.MQRPPO import MQRPPO
 from algorithms.MPPO import MPPO
+from algorithms.SMQRPPO import SMQRPPO
 from algorithms.common import Replay_Memory
 from utils import plot, append_summary
 from tqdm import tqdm
-
+import pickle
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
@@ -22,17 +23,17 @@ def parse_arguments():
                         help='Set this to False when training and True when evaluating.')
     parser.add_argument('--restore', default=False, action='store_true', help='Restore training')
     parser.add_argument('--benchmark', default=False, action='store_true', help='use benchmark data')
-    parser.add_argument('--hidden-dims', default=[64, 64], type=int, nargs='+', help='Hidden dimension of network')
-    parser.add_argument('--gamma', default=0.99, type=float, help='Reward discount')
+    parser.add_argument('--hidden-dims', default=[64,64], type=int, nargs='+', help='Hidden dimension of network')
+    parser.add_argument('--gamma', default=0.95, type=float, help='Reward discount')
     parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
     parser.add_argument('--kappa', default=1, type=float, help='Kappa used in quantile Huber loss')
     parser.add_argument('--n-quantile', default=200, type=int, help='Number of quantile to approximate distribution')
     parser.add_argument('--actor-lr', default=2e-4, type=float, help='Actor learning rate')
     parser.add_argument('--critic-lr', default=2e-4, type=float, help='Critic learning rate')
-    parser.add_argument('--batch-size', default=512, type=int)
-    parser.add_argument('--horrizon', default=2048, type=int)
-    parser.add_argument('--step', default=15, type=int, help='Number of gradient descent steps per episode')
-    parser.add_argument('--train-episodes', default=1000, type=int, help='Number of episodes to train')
+    parser.add_argument('--batch-size', default=64, type=int)
+    parser.add_argument('--horrizon', default=500, type=int)
+    parser.add_argument('--step', default=3, type=int, help='Number of gradient descent steps per episode')
+    parser.add_argument('--train-episodes', default=2000, type=int, help='Number of episodes to train')
     parser.add_argument('--save-episodes', default=100, type=int, help='Number of episodes to save model')
     parser.add_argument('--memory-size', default=1000000, type=int, help='Size of replay memory')
     parser.add_argument('--C', default=1, type=int, help='Number of episodes to copy critic network to target network')
@@ -41,7 +42,7 @@ def parse_arguments():
     parser.add_argument('--model-dir', default='model', type=str)
     parser.add_argument('--log-dir', default='log', type=str)
     parser.add_argument('--progress-file', default='progress.csv', type=str)
-    parser.add_argument('--device', default=1, type=int, help='GPU device number')
+    parser.add_argument('--device', default=-1, type=int, help='GPU device number')
     parser.add_argument("--max-episode-len", type=int, default=25, help="maximum episode length")
 
     return parser.parse_args()
@@ -77,7 +78,7 @@ if __name__ == '__main__':
     n_agent = len(environment.agents)
     tf.reset_default_graph()
     with tf.device(device):
-        if args.model == "QRDQN":
+        if args.model == "QRDDPG":
             agent_params = []
             for a in range(n_agent):
                 if args.eval:
@@ -87,7 +88,6 @@ if __name__ == '__main__':
                 agent_params.append(dict(hidden_dims=args.hidden_dims,
                                      replay_memory=replay_memory,
                                      gamma=args.gamma,
-                                     lr=args.actor_lr,
                                      tau=args.tau,
                                      N=args.N,
                                      kappa=args.kappa,
@@ -110,11 +110,16 @@ if __name__ == '__main__':
                                     gamma=args.gamma,
                                     actor_lr=args.actor_lr,
                                     critic_lr=args.critic_lr,horrizon=args.horrizon,n_quantile=args.n_quantile)
+        elif args.model == "SMQRPPO":
+            agent = SMQRPPO(environment, hidden_dims=args.hidden_dims,
+                                    kappa=args.kappa,
+                                    gamma=args.gamma,
+                                    actor_lr=args.actor_lr,
+                                    critic_lr=args.critic_lr,horrizon=args.horrizon,n_quantile=args.n_quantile)
     gpu_ops = tf.GPUOptions(per_process_gpu_memory_fraction=0.25, allow_growth=True)
     config = tf.ConfigProto(gpu_options=gpu_ops, allow_soft_placement=True)
     saver = tf.train.Saver()
     summary_writer = tf.summary.FileWriter(log_path, graph=tf.get_default_graph())
-
     with tf.Session(config=config) as sess:
         if args.eval or args.restore:
             saver.restore(sess, model_path)
@@ -141,7 +146,7 @@ if __name__ == '__main__':
         else:
             if args.benchmark:
                 infos = []
-                n_epi = 400
+                n_epi = 4000
                 for epi in tqdm(range(n_epi), ncols=100):
                     states, actions, rewards, info = agent.generate_episode(sess, max_episode_len=args.max_episode_len,benchmark=args.benchmark)
                     infos+=info
@@ -150,9 +155,11 @@ if __name__ == '__main__':
                     agents_info = info['n']
                     for agent_info in agents_info:
                         occ.append(agent_info[3])
+                with open(os.path.join(log_path, "benchmark.pkl"),"wb") as f:
+                    pickle.dump(infos, f)
                 print(sum(occ)/(len(occ)))
             else:
-                states, actions, rewards, info = agent.generate_episode(sess, max_episode_len=args.max_episode_len,
+                states, actions, rewards = agent.generate_episode(sess, max_episode_len=args.max_episode_len,
                                     render=True,benchmark=args.benchmark)
             
 

@@ -4,7 +4,7 @@ from typing import *
 from tqdm import tqdm
 import numpy as np
 from algorithms.common import *
-from algorithms.A2C import Actor_, VNetwork, BetaActor, GaussianActor
+from algorithms.A2C import Actor_, VNetwork, BetaActor, GaussianActor, DirichletActor
 from utils import append_summary
 import collections
 from scipy.special import loggamma 
@@ -12,7 +12,7 @@ from scipy.special import loggamma
 class MPPO(object):
     '''Multi-agent Proximal Policy Gradient.'''
     def __init__(self, env, hidden_dims,  gamma=0.99,
-                 actor_lr=1e-4, critic_lr=1e-4, lambd=0.95, horrizon=2048):
+                 actor_lr=1e-4, critic_lr=1e-4, lambd=0.96, horrizon=2048):
         self.env = env
         self.env_info = {'done': True, 'last_state': None, 'total_reward': 0}
         self.hidden_dims = hidden_dims
@@ -23,7 +23,7 @@ class MPPO(object):
         for i in range(self.n_agent):
             self.state_dim.append(reduce(mul, self.env.observation_space[i].shape))
             self.action_dim.append(self.env.action_space[i].n)
-            self.running_state_list.append(ZFilter((self.state_dim[i], ), clip=5))
+            self.running_state_list.append(ZFilter((self.state_dim[i], ), clip=40))
         self.gamma = gamma
         self.lambd = lambd
         self.horrizon = horrizon
@@ -40,20 +40,20 @@ class MPPO(object):
         self.build()
     
     def save_state_filter(self, path):
-        shape = self.running_state_list[0].rs._M.shape[0]
+        shape = max(self.state_dim)
         nms = np.zeros((self.n_agent, 3, shape))
         for agent_id in range(self.n_agent):
             nms[agent_id, 0, 0] = self.running_state_list[agent_id].rs._n
-            nms[agent_id, 1] = self.running_state_list[agent_id].rs._M
-            nms[agent_id, 2] = self.running_state_list[agent_id].rs._S
+            nms[agent_id, 1, :self.state_dim[agent_id]] = self.running_state_list[agent_id].rs._M
+            nms[agent_id, 2, :self.state_dim[agent_id]] = self.running_state_list[agent_id].rs._S
         np.save(path, nms)
 
     def load_state_filter(self, path):
         nms = np.load(path)
         for agent_id in range(self.n_agent):
             self.running_state_list[agent_id].rs._n = nms[agent_id, 0, 0]
-            self.running_state_list[agent_id].rs._M = nms[agent_id, 1]
-            self.running_state_list[agent_id].rs._S = nms[agent_id, 2]
+            self.running_state_list[agent_id].rs._M = nms[agent_id, 1, :self.state_dim[agent_id]]
+            self.running_state_list[agent_id].rs._S = nms[agent_id, 2, :self.state_dim[agent_id]]
 
     def build(self):
         self.build_actor()
@@ -103,6 +103,7 @@ class MPPO(object):
             std = tf.exp(log_std)
             action_loglikelihood = -0.5*tf.log(2*np.pi)-log_std
             action_loglikelihood += -0.5*tf.pow((agent_actions-mean)/std, 2)
+            #action_loglikelihood -= tf.log(1e-6+1-tf.tanh(agent_actions)**2)
             action_loglikelihood = tf.reduce_sum(action_loglikelihood, axis=1)[:, None]
             return action_loglikelihood
         elif isinstance(self.actor_list[0], DirichletActor):
@@ -124,7 +125,8 @@ class MPPO(object):
             ratio = tf.exp(action_loglikelihood-self.action_loglikelihood[:, agent_id][:, None])
             adv = self.advantages[:, agent_id][:, None]
             pg_loss = tf.minimum(ratio*adv, tf.clip_by_value(ratio, 0.8, 1.2)*adv)
-            self.actor_loss_list.append(-tf.reduce_mean(pg_loss))
+            actor_loss = -tf.reduce_mean(pg_loss)+tf.losses.get_regularization_loss(scope="actor_{}".format(agent_id))
+            self.actor_loss_list.append(actor_loss)
 
     def build_step(self):
         self.global_step = tf.Variable(0, trainable=False)
@@ -193,6 +195,7 @@ class MPPO(object):
             action = np.random.normal(loc=mean, scale=std)
             action_loglikelihood = -0.5*np.log(2*np.pi)-log_std
             action_loglikelihood += -0.5*np.power((action-mean)/std, 2)
+            #action_loglikelihood -= np.log(1e-6+1-np.tanh(action)**2)
             action_loglikelihood = np.sum(action_loglikelihood)
         elif isinstance(self.actor_list[0], DirichletActor):
             alpha = self.actor_output_list[agent_id].eval(feed_dict=feed_dict).squeeze(axis=0)
@@ -217,7 +220,7 @@ class MPPO(object):
                 for agent_id in range(self.n_agent):
                     obs_start = sum(self.state_dim[:agent_id])
                     obs_end = sum(self.state_dim[:agent_id+1])
-                    state[obs_start:obs_end] = self.running_state_list[agent_id](state[obs_start:obs_end])
+                    #state[obs_start:obs_end] = self.running_state_list[agent_id](state[obs_start:obs_end])
                 self.env_info['last_state'] = state
                 self.env_info['done'] = False
                 self.env_info['total_reward'] = 0
@@ -236,7 +239,7 @@ class MPPO(object):
             for agent_id in range(self.n_agent):
                 obs_start = sum(self.state_dim[:agent_id])
                 obs_end = sum(self.state_dim[:agent_id+1])
-                state[obs_start:obs_end] = self.running_state_list[agent_id](state[obs_start:obs_end])
+                #state[obs_start:obs_end] = self.running_state_list[agent_id](state[obs_start:obs_end])
             self.env_info['last_state'] = state
             self.env_info['total_reward'] += reward[0]
             rewards[step]=reward

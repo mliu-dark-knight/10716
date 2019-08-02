@@ -28,7 +28,8 @@ class MQRPPO(MPPO):
         for agent_id in range(self.n_agent):
             agent_states = self.states[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
             Z = self.critic_list[agent_id](agent_states)
-            values = self.get_mean(Z)[:, None]
+            #values = self.get_mean(Z)[:, None]
+            values = Z[:, int(self.n_quantile/2)]
             self.values_list.append(values)
 
             errors = self.returns[:, agent_id][:, None] - Z
@@ -40,5 +41,5 @@ class MQRPPO(MPPO):
             quantile_huber_loss = (tf.abs(quantiles - tf.stop_gradient(tf.to_float(errors < 0))) * huber_loss) / \
                               self.kappa
             critic_loss = tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=1), axis=0)
-            critic_loss += tf.losses.get_regularization_loss(scope="critic_{}".format(agent_id))
+            #critic_loss += tf.losses.get_regularization_loss(scope="critic_{}".format(agent_id))
             self.critic_loss_list.append(critic_loss)

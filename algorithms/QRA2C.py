@@ -39,18 +39,20 @@ class QRVNetworkNoCrossing(object):
         with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
             hidden = states
             for hidden_dim in self.hidden_dims:
-                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
+                hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.tanh,
                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
                                          bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
                                          kernel_initializer=tf.initializers.orthogonal())
             base = tf.layers.dense(hidden, 1, activation=None,
                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
                                          bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
-                                         kernel_initializer=tf.initializers.orthogonal())
-            quantiles = tf.layers.dense(hidden, self.n_quantile-1, activation=tf.nn.relu,
+                                         kernel_initializer=tf.initializers.orthogonal(),
+                                         use_bias=False)
+            quantiles = tf.layers.dense(hidden, self.n_quantile-1, activation=tf.nn.softplus,
                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
                                          bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
-                                         kernel_initializer=tf.initializers.orthogonal())
+                                         kernel_initializer=tf.initializers.orthogonal(),
+                                         use_bias=False)
         return base, quantiles
 
 class QRA2C(A2C):

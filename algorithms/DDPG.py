@@ -11,13 +11,11 @@ from utils import append_summary
 class DDPG(object):
 
 	def __init__(self, env, hidden_dims, replay_memory=None, gamma=1.0, init_std=0.2, tau=1e-2,
-	             actor_lr=1e-3, critic_lr=1e-3, N=5):
+	             actor_lr=1e-3, critic_lr=1e-3, N=1, scope_pre = ""):
 		self.env = env
 		self.hidden_dims = hidden_dims
-		self.goal_dim = reduce(mul, env.observation_space.spaces['desired_goal'].shape)
-		self.state_dim = reduce(mul, env.observation_space.spaces['observation'].shape) + self.goal_dim
-		self.action_dim = reduce(mul, env.action_space.shape)
-
+		self.state_dim = reduce(mul,env.observation_space.shape)
+		self.n_action = env.action_space.n
 		self.gamma = gamma
 		self.init_std = init_std
 		self.tau = tau
@@ -25,9 +23,9 @@ class DDPG(object):
 		self.critic_lr = critic_lr
 		self.N = N
 		self.replay_memory = replay_memory
-
+		self.scope_pre = scope_pre
 		self.build()
-
+		
 	def build(self):
 		self.build_actor_critic()
 		self.build_placeholder()
@@ -37,14 +35,14 @@ class DDPG(object):
 		self.build_summary()
 
 	def build_actor_critic(self):
-		self.actor = Actor(self.hidden_dims, self.action_dim, 'actor')
-		self.actor_target = Actor(self.hidden_dims, self.action_dim, 'target_actor')
-		self.critic = Critic(self.hidden_dims, 'critic')
-		self.critic_target = Critic(self.hidden_dims, 'target_critic')
+		self.actor = Actor(self.hidden_dims, self.n_action, self.scope_pre+'actor')
+		self.actor_target = Actor(self.hidden_dims, self.n_action, self.scope_pre+'target_actor')
+		self.critic = Critic(self.hidden_dims, self.scope_pre+'critic')
+		self.critic_target = Critic(self.hidden_dims, self.scope_pre+'target_critic')
 
 	def build_placeholder(self):
 		self.states = tf.placeholder(tf.float32, shape=[None, self.state_dim])
-		self.actions = tf.placeholder(tf.float32, shape=[None, self.action_dim])
+		self.actions = tf.placeholder(tf.float32, shape=[None, self.n_action])
 		self.rewards = tf.placeholder(tf.float32, shape=[None])
 		self.nexts = tf.placeholder(tf.float32, shape=[None, self.state_dim])
 		self.are_non_terminal = tf.placeholder(tf.float32, shape=[None])
@@ -52,12 +50,12 @@ class DDPG(object):
 
 	def build_copy_op(self):
 		self.init_actor, self.update_actor = get_target_updates(
-			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'),
-			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_actor'), self.tau)
+			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'actor'),
+			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'target_actor'), self.tau)
 
 		self.init_critic, self.update_critic = get_target_updates(
-			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
-			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_critic'), self.tau)
+			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'critic'),
+			tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'target_critic'), self.tau)
 
 	def build_loss(self):
 		with tf.variable_scope('normalize_states'):
@@ -80,13 +78,13 @@ class DDPG(object):
 		with tf.control_dependencies([tf.Assert(tf.is_finite(self.actor_loss), [self.actor_loss])]):
 			self.actor_step = actor_optimizer.minimize(
 				self.actor_loss,
-				var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
+				var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'actor'))
 		critic_optimizer = tf.train.AdamOptimizer(learning_rate=self.critic_lr)
 		with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS, scope='normalize_states') +
 		                             [tf.Assert(tf.is_finite(self.critic_loss), [self.critic_loss])]):
 			self.critic_step = critic_optimizer.minimize(
 				self.critic_loss,
-				var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='critic'),
+				var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope_pre+'critic'),
 				global_step=self.global_step)
 
 	def build_summary(self):
