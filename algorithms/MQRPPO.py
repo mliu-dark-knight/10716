@@ -8,9 +8,10 @@ from utils import append_summary
 import gym
 
 class MQRPPO(MPPO):
-    def __init__(self, *args, kappa=1.0, n_quantile=200, **kwargs):
+    def __init__(self, *args, kappa=1.0, n_quantile=200, quantile=0.5, **kwargs):
         self.kappa = kappa
         self.n_quantile = n_quantile
+        self.quantile = quantile
         super(MQRPPO, self).__init__(*args, **kwargs)
     
     def get_mean(self, Z):
@@ -29,7 +30,7 @@ class MQRPPO(MPPO):
             agent_states = self.states[:, sum(self.state_dim[:agent_id]):sum(self.state_dim[:agent_id+1])]
             Z = self.critic_list[agent_id](agent_states)
             #values = self.get_mean(Z)[:, None]
-            values = Z[:, int(self.n_quantile/2)]
+            values = Z[:, int((self.quantile-1./self.n_quantile)*self.n_quantile)]
             self.values_list.append(values)
 
             errors = self.returns[:, agent_id][:, None] - Z

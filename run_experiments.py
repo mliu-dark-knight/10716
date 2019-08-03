@@ -7,7 +7,7 @@ def parse_arguments():
 	parser.add_argument('--exp-id', default=0, type=int)
 	parser.add_argument('--lr', default=2.5e-4, type=float)
 	return parser.parse_args()
-# 3000: 6M
+
 train_episodes = defaultdict(lambda : 500)
 train_episodes["Ant-v2"] = 1500
 # exp-0 100 quantile 1 kappa
@@ -17,12 +17,15 @@ train_episodes["Ant-v2"] = 1500
 # exp-4 200 quantile 0.01 kappa hidden-dims 256
 # exp-5 100 quantile 0.01 kappa no l2 reg
 # exp-6 MSQRPPO 0.01 kappa no l2 reg
-# exp-7 100 quantile 0.02 kappa SMQRPPO
+# exp-7 100 quantile 0.01 kappa no l2 reg 0.1 quantile
+## exp-8 100 quantile 0.01 kappa no l2 reg 0.01 quantile
+# exp-9 100 quantile 0.5 kappa no l2 reg
+# exp-10 100 quantile 0.5 kappa no l2 reg
 if __name__ == '__main__':
 	args = parse_arguments()
-	algorithms = ["MSQRPPO"]
+	algorithms = ["MQRPPO"]
 	# "PartiallyObservableAnt",    "PartiallyObservableHalfCheetah"
-	envs = [ "simple_tag" ]
+	envs = [ "simple_spread" ]
 	#envs = [ "PartiallyObservableWalker2d","PartiallyObservableAnt", "PartiallyObservableHalfCheetah", "PartiallyObservableHopper" ]
 	for env in envs:
 		for algo in algorithms:
@@ -35,6 +38,6 @@ if __name__ == '__main__':
 			cmd += " --log-dir exp-{}-log".format(args.exp_id)
 			cmd += " --model-dir exp-{}-model".format(args.exp_id)
 			cmd += " --plot-dir exp-{}-plot".format(args.exp_id)
-			cmd += " --n-quantile 100 --step 1 --kappa 0.01"
+			cmd += " --n-quantile 100 --step 1 --kappa 0.01 --quantile 0.5"
 
 			os.system(cmd)
