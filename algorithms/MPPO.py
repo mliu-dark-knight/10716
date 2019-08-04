@@ -177,6 +177,10 @@ class MPPO(object):
                 saver.save(sess, model_path)
                 self.save_state_filter(filter_path)
         return total_rewards
+    def get_deterministic_action(self, sess, states, agent_id):
+        feed_dict = {self.states: states.reshape(1, -1), self.training: False}
+        mean, log_std = sess.run(self.actor_output_list[agent_id], feed_dict=feed_dict)
+        return mean.squeeze(axis=0)
 
     def sample_action(self, sess, states, agent_id):
         feed_dict = {self.states: states.reshape(1, -1), self.training: False}

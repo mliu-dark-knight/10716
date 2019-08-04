@@ -10,22 +10,14 @@ def parse_arguments():
 
 train_episodes = defaultdict(lambda : 500)
 train_episodes["Ant-v2"] = 1500
-# exp-0 100 quantile 1 kappa
-# exp-1 200 quantile 1 kappa
-# exp-2 100 quantile 0.01 kappa
-# exp-3 200 quantile 0.01 kappa
-# exp-4 200 quantile 0.01 kappa hidden-dims 256
-# exp-5 100 quantile 0.01 kappa no l2 reg
-# exp-6 MSQRPPO 0.01 kappa no l2 reg
-# exp-7 100 quantile 0.01 kappa no l2 reg 0.1 quantile
-## exp-8 100 quantile 0.01 kappa no l2 reg 0.01 quantile
-# exp-9 100 quantile 0.5 kappa no l2 reg
-# exp-10 100 quantile 0.5 kappa no l2 reg
+# exp-0~4 100 quantiles 0.01 kappa, 50-percentile
+# exp-9 kappa 1e-3 n-quantile 200
+# exp-10 0.99 gamma
 if __name__ == '__main__':
 	args = parse_arguments()
 	algorithms = ["MQRPPO"]
 	# "PartiallyObservableAnt",    "PartiallyObservableHalfCheetah"
-	envs = [ "simple_spread" ]
+	envs = ["simple_spread_modified"]
 	#envs = [ "PartiallyObservableWalker2d","PartiallyObservableAnt", "PartiallyObservableHalfCheetah", "PartiallyObservableHopper" ]
 	for env in envs:
 		for algo in algorithms:
@@ -38,6 +30,7 @@ if __name__ == '__main__':
 			cmd += " --log-dir exp-{}-log".format(args.exp_id)
 			cmd += " --model-dir exp-{}-model".format(args.exp_id)
 			cmd += " --plot-dir exp-{}-plot".format(args.exp_id)
-			cmd += " --n-quantile 100 --step 1 --kappa 0.01 --quantile 0.5"
+			cmd += " --gamma 0.99"
+			#cmd += " --restore"
 
 			os.system(cmd)

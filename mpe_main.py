@@ -23,14 +23,14 @@ def parse_arguments():
     parser.add_argument('--hidden-dims', default=[64,64], type=int, nargs='+', help='Hidden dimension of network')
     parser.add_argument('--gamma', default=0.95, type=float, help='Reward discount')
     parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
-    parser.add_argument('--kappa', default=1, type=float, help='Kappa used in quantile Huber loss')
-    parser.add_argument('--n-quantile', default=200, type=int, help='Number of quantile to approximate distribution')
+    parser.add_argument('--kappa', default=0.01, type=float, help='Kappa used in quantile Huber loss')
+    parser.add_argument('--n-quantile', default=100, type=int, help='Number of quantile to approximate distribution')
     parser.add_argument('--actor-lr', default=2e-4, type=float, help='Actor learning rate')
     parser.add_argument('--critic-lr', default=2e-4, type=float, help='Critic learning rate')
     parser.add_argument('--quantile', default=0.5, type=float, help='Critic learning rate')
     parser.add_argument('--batch-size', default=64, type=int)
     parser.add_argument('--horrizon', default=500, type=int)
-    parser.add_argument('--step', default=3, type=int, help='Number of gradient descent steps per episode')
+    parser.add_argument('--step', default=1, type=int, help='Number of gradient descent steps per episode')
     parser.add_argument('--train-episodes', default=2000, type=int, help='Number of episodes to train')
     parser.add_argument('--save-episodes', default=100, type=int, help='Number of episodes to save model')
     parser.add_argument('--memory-size', default=1000000, type=int, help='Size of replay memory')
@@ -95,19 +95,19 @@ if __name__ == '__main__':
         elif args.model == "MPPO":
             agent = MPPO(environment, hidden_dims=args.hidden_dims, 
                          gamma=args.gamma, actor_lr=args.actor_lr,
-                         critic_lr=args.critic_lr,horrizon=args.horrizon)
+                         critic_lr=args.critic_lr,horrizon=args.horrizon, lambd=args.lambd)
         elif args.model == "MSQRPPO":
             agent = MSQRPPO(environment, hidden_dims=args.hidden_dims,
                                     kappa=args.kappa,
                                     gamma=args.gamma,
                                     actor_lr=args.actor_lr,
-                                    critic_lr=args.critic_lr,horrizon=args.horrizon, quantile=args.quantile)
+                                    critic_lr=args.critic_lr,horrizon=args.horrizon, quantile=args.quantile, lambd=args.lambd)
         elif args.model == "MQRPPO":
             agent = MQRPPO(environment, hidden_dims=args.hidden_dims,
                                     kappa=args.kappa,
                                     gamma=args.gamma,
                                     actor_lr=args.actor_lr,
-                                    critic_lr=args.critic_lr,horrizon=args.horrizon,n_quantile=args.n_quantile,quantile=args.quantile)
+                                    critic_lr=args.critic_lr,horrizon=args.horrizon,n_quantile=args.n_quantile,quantile=args.quantile, lambd=args.lambd)
     gpu_ops = tf.GPUOptions(per_process_gpu_memory_fraction=0.25, allow_growth=True)
     config = tf.ConfigProto(gpu_options=gpu_ops, allow_soft_placement=True)
     saver = tf.train.Saver()
