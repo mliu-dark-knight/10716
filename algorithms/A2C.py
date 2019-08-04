@@ -66,24 +66,28 @@ class BetaActor(object):
             return alpha+1, beta+1
 
 class GaussianActor(object):
-    def __init__(self, hidden_dims, action_dim, scope):
+    def __init__(self, hidden_dims, action_dim, scope, policy_reg):
         self.hidden_dims = hidden_dims
         self.action_dim = action_dim
         self.scope = scope
+        self.policy_reg = policy_reg
         with tf.variable_scope(scope):
-            self.log_std = tf.get_variable(name=self.scope+"_log_std", shape=[1, self.action_dim], initializer=tf.zeros_initializer(), regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+            self.log_std = tf.get_variable(name=self.scope+"_log_std",
+                                           shape=[1, self.action_dim],
+                                           initializer=tf.zeros_initializer(),
+                                           regularizer=tf.contrib.layers.l2_regularizer(self.policy_reg))
 
     def __call__(self, states):
         with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
             hidden = states
             for hidden_dim in self.hidden_dims:
                 hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.tanh,
-                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
-                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(self.policy_reg),
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(self.policy_reg),
                                          kernel_initializer=tf.initializers.orthogonal())
             mean = tf.layers.dense(hidden, self.action_dim, activation=None,
-                                    kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
-                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
+                                    kernel_regularizer=tf.contrib.layers.l2_regularizer(self.policy_reg),
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(self.policy_reg),
                                          kernel_initializer=tf.initializers.orthogonal(),
                                          use_bias=False)
             #log_std = tf.layers.dense(hidden, self.action_dim, activation=None,
@@ -98,9 +102,10 @@ class GaussianActor(object):
             return mean, log_std
 
 class VNetwork(object):
-    def __init__(self, hidden_dims, scope):
+    def __init__(self, hidden_dims, scope, value_reg):
         self.hidden_dims = hidden_dims
         self.scope = scope
+        self.value_reg = value_reg
         
     def __call__(self, states):
         with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
@@ -108,12 +113,12 @@ class VNetwork(object):
             for hidden_dim in self.hidden_dims:
                 hidden = tf.layers.dense(hidden, hidden_dim, activation=tf.nn.relu,
                                          kernel_initializer=tf.initializers.orthogonal(),
-                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
-                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(self.value_reg),
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(self.value_reg))
             hidden = tf.layers.dense(hidden, 1, activation=None,
                                    kernel_initializer=tf.initializers.orthogonal(),
-                                   kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3),
-                                         bias_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                   kernel_regularizer=tf.contrib.layers.l2_regularizer(self.value_reg),
+                                         bias_regularizer=tf.contrib.layers.l2_regularizer(self.value_reg))
             return hidden
 
 class A2C(object):

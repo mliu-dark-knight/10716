@@ -10,12 +10,12 @@ def parse_arguments():
 
 train_episodes = defaultdict(lambda : 500)
 train_episodes["Ant-v2"] = 1500
-# exp-0~4 100 quantiles 0.01 kappa, 50-percentile
-# exp-9 kappa 1e-3 n-quantile 200
+# exp-0 MSQRPPO
+# exp-1 MSQRPPO + reg
 # exp-10 0.99 gamma
 if __name__ == '__main__':
 	args = parse_arguments()
-	algorithms = ["MQRPPO"]
+	algorithms = ["MSQRPPO"]
 	# "PartiallyObservableAnt",    "PartiallyObservableHalfCheetah"
 	envs = ["simple_spread_modified"]
 	#envs = [ "PartiallyObservableWalker2d","PartiallyObservableAnt", "PartiallyObservableHalfCheetah", "PartiallyObservableHopper" ]
@@ -30,7 +30,7 @@ if __name__ == '__main__':
 			cmd += " --log-dir exp-{}-log".format(args.exp_id)
 			cmd += " --model-dir exp-{}-model".format(args.exp_id)
 			cmd += " --plot-dir exp-{}-plot".format(args.exp_id)
-			cmd += " --gamma 0.99"
+			cmd += " --policy-reg 1e-3 --value-reg 1e-3"
 			#cmd += " --restore"
 
 			os.system(cmd)

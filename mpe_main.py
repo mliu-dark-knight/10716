@@ -22,6 +22,7 @@ def parse_arguments():
     parser.add_argument('--benchmark', default=False, action='store_true', help='use benchmark data')
     parser.add_argument('--hidden-dims', default=[64,64], type=int, nargs='+', help='Hidden dimension of network')
     parser.add_argument('--gamma', default=0.95, type=float, help='Reward discount')
+    parser.add_argument('--lambd', default=0.96, type=float, help='Reward discount')
     parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
     parser.add_argument('--kappa', default=0.01, type=float, help='Kappa used in quantile Huber loss')
     parser.add_argument('--n-quantile', default=100, type=int, help='Number of quantile to approximate distribution')
@@ -42,6 +43,8 @@ def parse_arguments():
     parser.add_argument('--progress-file', default='progress.csv', type=str)
     parser.add_argument('--device', default=-1, type=int, help='GPU device number')
     parser.add_argument("--max-episode-len", type=int, default=25, help="maximum episode length")
+    parser.add_argument("--policy-reg", type=float, default=0.)
+    parser.add_argument("--value-reg", type=float, default=0.)
 
     return parser.parse_args()
 
@@ -95,19 +98,33 @@ if __name__ == '__main__':
         elif args.model == "MPPO":
             agent = MPPO(environment, hidden_dims=args.hidden_dims, 
                          gamma=args.gamma, actor_lr=args.actor_lr,
-                         critic_lr=args.critic_lr,horrizon=args.horrizon, lambd=args.lambd)
+                         critic_lr=args.critic_lr,horrizon=args.horrizon,
+                         lambd=args.lambd,
+                         policy_reg=args.policy_reg,
+                         value_reg=args.value_reg)
         elif args.model == "MSQRPPO":
             agent = MSQRPPO(environment, hidden_dims=args.hidden_dims,
                                     kappa=args.kappa,
                                     gamma=args.gamma,
                                     actor_lr=args.actor_lr,
-                                    critic_lr=args.critic_lr,horrizon=args.horrizon, quantile=args.quantile, lambd=args.lambd)
+                                    critic_lr=args.critic_lr,
+                                    horrizon=args.horrizon,
+                                    quantile=args.quantile,
+                                    lambd=args.lambd,
+                                    policy_reg=args.policy_reg,
+                                    value_reg=args.value_reg)
         elif args.model == "MQRPPO":
             agent = MQRPPO(environment, hidden_dims=args.hidden_dims,
                                     kappa=args.kappa,
                                     gamma=args.gamma,
                                     actor_lr=args.actor_lr,
-                                    critic_lr=args.critic_lr,horrizon=args.horrizon,n_quantile=args.n_quantile,quantile=args.quantile, lambd=args.lambd)
+                                    critic_lr=args.critic_lr,
+                                    horrizon=args.horrizon,
+                                    n_quantile=args.n_quantile,
+                                    quantile=args.quantile,
+                                    lambd=args.lambd,
+                                    policy_reg=args.policy_reg,
+                                    value_reg=args.value_reg)
     gpu_ops = tf.GPUOptions(per_process_gpu_memory_fraction=0.25, allow_growth=True)
     config = tf.ConfigProto(gpu_options=gpu_ops, allow_soft_placement=True)
     saver = tf.train.Saver()

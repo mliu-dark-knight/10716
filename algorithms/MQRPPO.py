@@ -23,7 +23,7 @@ class MQRPPO(MPPO):
 
     def build_critic(self):
         for i in range(self.n_agent):
-            self.critic_list.append(QRVNetworkNoCrossing(self.hidden_dims, self.n_quantile, 'critic_{}'.format(i)))
+            self.critic_list.append(QRVNetworkNoCrossing(self.hidden_dims, self.n_quantile, 'critic_{}'.format(i), self.value_reg))
     
     def build_critic_loss(self):
         for agent_id in range(self.n_agent):

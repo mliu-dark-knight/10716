@@ -12,7 +12,7 @@ from scipy.special import loggamma
 class MPPO(object):
     '''Multi-agent Proximal Policy Gradient.'''
     def __init__(self, env, hidden_dims,  gamma=0.99,
-                 actor_lr=1e-4, critic_lr=1e-4, lambd=0.96, horrizon=2048):
+                 actor_lr=1e-4, critic_lr=1e-4, lambd=0.96, horrizon=2048, policy_reg=0.,value_reg=0.):
         self.env = env
         self.env_info = {'done': True, 'last_state': None, 'total_reward': 0}
         self.hidden_dims = hidden_dims
@@ -37,7 +37,10 @@ class MPPO(object):
         self.critic_step_list = []
         self.values_list = []
         self.actor_output_list = []
+        self.policy_reg = policy_reg
+        self.value_reg = value_reg
         self.build()
+        
     
     def save_state_filter(self, path):
         shape = max(self.state_dim)
@@ -65,10 +68,10 @@ class MPPO(object):
     
     def build_actor(self):
         for i in range(self.n_agent):
-            self.actor_list.append(GaussianActor(self.hidden_dims, self.action_dim[i], 'actor_{}'.format(i)))
+            self.actor_list.append(GaussianActor(self.hidden_dims, self.action_dim[i], 'actor_{}'.format(i), self.policy_reg))
     def build_critic(self):
         for i in range(self.n_agent):
-            self.critic_list.append(VNetwork(self.hidden_dims, 'critic_{}'.format(i)))
+            self.critic_list.append(VNetwork(self.hidden_dims, 'critic_{}'.format(i), self.value_reg))
 
     def build_placeholder(self):
         self.states = tf.placeholder(tf.float32, shape=[None, sum(self.state_dim)])
