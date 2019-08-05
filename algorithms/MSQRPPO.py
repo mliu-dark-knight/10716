@@ -35,5 +35,5 @@ class MSQRPPO(MPPO):
             quantile_huber_loss = (tf.abs(self.quantile - tf.stop_gradient(tf.to_float(errors < 0))) * huber_loss) / \
                                     self.kappa
             critic_loss = tf.reduce_mean(tf.reduce_sum(quantile_huber_loss, axis=1), axis=0)
-            #critic_loss += tf.losses.get_regularization_loss(scope="critic_{}".format(agent_id))
+            critic_loss += tf.losses.get_regularization_loss(scope="critic_{}".format(agent_id))
             self.critic_loss_list.append(critic_loss)
