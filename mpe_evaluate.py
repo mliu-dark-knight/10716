@@ -9,6 +9,7 @@ from maddpg.trainer.maddpg import MADDPGAgentTrainer
 import tensorflow.contrib.layers as layers
 from tqdm import tqdm
 from algorithms.MSQRPPO import MSQRPPO
+from algorithms.SMPPO import SMPPO
 
 def mlp_model(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
     # This model takes as input an observation and returns values of all actions
@@ -76,25 +77,23 @@ class ImportMQRPPOAgent():
         self.config.intra_op_parallelism_threads = 1
         self.config.inter_op_parallelism_threads= 1
         self.sess = tf.Session(graph=self.graph, config=self.config)
-
-        agent = MSQRPPO(env, hidden_dims=[64, 64],
-                                    kappa=1e-2,
-                                    gamma=0.95,
-                                    quantile=0.5)
-        with self.graph.as_default():
-            self.agent = MSQRPPO(env, hidden_dims=[64, 64],
-                                    kappa=1e-2,
-                                    gamma=0.95,
-                                    quantile=0.5)
-            saver = tf.train.Saver()
-            saver.restore(self.sess, os.path.join(model_path, 'model.ckpt'))
-            self.agent.load_state_filter(os.path.join(model_path, 'filter.npy'))
-    def act(self, obs_n):
-        action = []
         with self.graph.as_default():
             with self.sess.as_default() as sess:
+                self.agent = SMPPO(env, hidden_dims=[64, 64],
+                                        kappa=1e-2,
+                                        gamma=0.95,
+                                        quantile=0.5)
+                saver = tf.train.Saver()
+                saver.restore(self.sess, os.path.join(model_path, 'model.ckpt'))
+                self.agent.load_state_filter(os.path.join(model_path, 'filter.npy'))
+    def act(self, obs_n):
+        action = []
+        with self.sess.as_default() as sess:    
+            with self.graph.as_default():
+                state = np.concatenate([j.reshape(1,-1) for j in obs_n], axis=1).flatten()
                 for agent in range(self.agent.n_agent):
-                    action.append(self.agent.get_deterministic_action(sess, np.array(obs_n), agent))
+                    agent_state = state[self.agent.state_dim*agent:self.agent.state_dim*(1+agent)]
+                    action.append(self.agent.get_deterministic_action(sess, agent_state, agent))
         return action
     def close_sess(self):
         self.sess.close()
@@ -128,8 +127,12 @@ def parse_args():
 if __name__ == '__main__':
     arglist = parse_args()
     env =  make_env("simple_spread_modified", arglist, True)
-    team0_dir = os.path.join("exp-0", "MSQRPPO_simple_spread_modified")
+    team0_dir = os.path.join("exp-0", "SMPPO_simple_spread_modified")
     team_0 = ImportMQRPPOAgent(team0_dir, env)
+    team1_dir = os.path.join("exp-1", "SMPPO_simple_spread_modified")
+    team_1 = ImportMQRPPOAgent(team1_dir, env)
+    team2_dir = os.path.join("exp-2", "SMPPO_simple_spread_modified")
+    team_2 = ImportMQRPPOAgent(team2_dir, env)
     
     infos = []
     n_epi = 400
@@ -137,11 +140,15 @@ if __name__ == '__main__':
         obs_n = env.reset()
         for step in range(25):
             action_0 = team_0.act(obs_n)
-            action = [action_0[0], action_0[1], action_0[2]]
+            action_1 = team_1.act(obs_n)
+            action_2 = team_2.act(obs_n)
+            action = [action_0[0], action_1[1], action_2[2]]
             obs_n, rew_n, done_n, info_n = env.step(action)
             infos.append(info_n['n'])
+            env.render()
             if all(done_n):
                 break
+        break
     occ = []
     for info in infos:
         for info_ in info:
