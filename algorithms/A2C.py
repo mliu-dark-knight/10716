@@ -98,7 +98,7 @@ class GaussianActor(object):
             batch_size = tf.shape(states)[0]
             b = tf.ones((batch_size, 1))
             log_std = tf.tile(self.log_std, (batch_size, 1))
-            log_std = self.log_std*b
+            #log_std = self.log_std*b
             return mean, log_std
 
 class VNetwork(object):

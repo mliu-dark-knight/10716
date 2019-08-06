@@ -7,6 +7,7 @@ import multiagent.scenarios as scenarios
 from algorithms.MSQRPPO import MSQRPPO
 from algorithms.MQRPPO import MQRPPO
 from algorithms.MPPO import MPPO
+from algorithms.SMPPO import SMPPO
 from utils import plot, append_summary
 from tqdm import tqdm
 import pickle
@@ -104,6 +105,17 @@ if __name__ == '__main__':
                          value_reg=args.value_reg)
         elif args.model == "MSQRPPO":
             agent = MSQRPPO(environment, hidden_dims=args.hidden_dims,
+                                    kappa=args.kappa,
+                                    gamma=args.gamma,
+                                    actor_lr=args.actor_lr,
+                                    critic_lr=args.critic_lr,
+                                    horrizon=args.horrizon,
+                                    quantile=args.quantile,
+                                    lambd=args.lambd,
+                                    policy_reg=args.policy_reg,
+                                    value_reg=args.value_reg)
+        elif args.model == "SMPPO":
+            agent = SMPPO(environment, hidden_dims=args.hidden_dims,
                                     kappa=args.kappa,
                                     gamma=args.gamma,
                                     actor_lr=args.actor_lr,
