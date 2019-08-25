@@ -26,7 +26,7 @@ def parse_arguments():
     parser.add_argument('--lambd', default=0.96, type=float, help='Reward discount')
     parser.add_argument('--tau', default=1e-2, type=float, help='Soft parameter update tau')
     parser.add_argument('--kappa', default=0.01, type=float, help='Kappa used in quantile Huber loss')
-    parser.add_argument('--n-quantile', default=100, type=int, help='Number of quantile to approximate distribution')
+    parser.add_argument('--n-quantile', default=200, type=int, help='Number of quantile to approximate distribution')
     parser.add_argument('--actor-lr', default=2e-4, type=float, help='Actor learning rate')
     parser.add_argument('--critic-lr', default=2e-4, type=float, help='Critic learning rate')
     parser.add_argument('--quantile', default=0.5, type=float, help='Critic learning rate')
@@ -34,7 +34,7 @@ def parse_arguments():
     parser.add_argument('--horrizon', default=500, type=int)
     parser.add_argument('--step', default=1, type=int, help='Number of gradient descent steps per episode')
     parser.add_argument('--train-episodes', default=2000, type=int, help='Number of episodes to train')
-    parser.add_argument('--save-episodes', default=100, type=int, help='Number of episodes to save model')
+    parser.add_argument('--save-episodes', default=500, type=int, help='Number of episodes to save model')
     parser.add_argument('--memory-size', default=1000000, type=int, help='Size of replay memory')
     parser.add_argument('--C', default=1, type=int, help='Number of episodes to copy critic network to target network')
     parser.add_argument('--N', default=1, type=int, help='N step returns.')
@@ -46,6 +46,7 @@ def parse_arguments():
     parser.add_argument("--max-episode-len", type=int, default=25, help="maximum episode length")
     parser.add_argument("--policy-reg", type=float, default=0.)
     parser.add_argument("--value-reg", type=float, default=0.)
+    parser.add_argument("--opponent-sampling-episodes", default=1000, type=int)
 
     return parser.parse_args()
 
@@ -160,7 +161,7 @@ if __name__ == '__main__':
             total_rewards = agent.train(
                 sess, saver, summary_writer, progress_fd, model_path, filter_path, batch_size=args.batch_size, step=args.step,
                 train_episodes=args.train_episodes, start_episode=start_episode, save_episodes=args.save_episodes,
-                max_episode_len=args.max_episode_len)
+                max_episode_len=args.max_episode_len, opponent_sampling_episodes=args.opponent_sampling_episodes)
             progress_fd.close()
             plot(os.path.join(args.plot_dir, args.model + '_' + args.env), np.array(total_rewards) + 1e-10)
             summary_writer.close()

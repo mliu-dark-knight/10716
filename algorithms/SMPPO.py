@@ -87,7 +87,7 @@ class SMPPO(object):
         self.n_agent = len(self.env.observation_space)
         self.state_dim=reduce(mul, self.env.observation_space[0].shape)
         self.action_dim=self.env.action_space[0].n
-        self.running_state=ZFilter((self.state_dim, ), clip=40)
+        self.running_state=ZFilter((self.state_dim, ), clip=5)
         self.gamma = gamma
         self.lambd = lambd
         self.quantile = quantile
@@ -105,7 +105,7 @@ class SMPPO(object):
         self.actor_output = None
         self.policy_reg = policy_reg
         self.value_reg = value_reg
-        #self.tau = 0.01
+        self.tau = 1
         self.build()
 
     def build(self):
@@ -114,22 +114,30 @@ class SMPPO(object):
         self.build_placeholder()
         self.build_loss()
         self.build_step()
-        #self.build_copy_op()
+        self.build_copy_op()
     
     def save_state_filter(self, path):
-        return
+        shape = max(self.state_dim)
+        nms = np.zeros((3, shape))
+        nms[0, 0] = self.running_state.rs._n
+        nms[1, :self.state_dim] = self.running_state.rs._M
+        nms[2, :self.state_dim] = self.running_state.rs._S
+        np.save(path, nms)
 
     def load_state_filter(self, path):
-        return
+        nms = np.load(path)
+        self.running_state.rs._n = nms[0, 0]
+        self.running_state.rs._M = nms[1, :self.state_dim]
+        self.running_state.rs._S = nms[2, :self.state_dim]
 
     def build_actor(self):
         self.actor = GaussianActor(self.hidden_dims, self.action_dim, 'actor', self.policy_reg, self.n_agent)
-        #self.actor_target = GaussianActor(self.hidden_dims, self.action_dim, 'target_actor', self.policy_reg, self.n_agent)
+        self.actor_target = GaussianActor(self.hidden_dims, self.action_dim, 'target_actor', self.policy_reg, self.n_agent)
 
-    #def build_copy_op(self):
-    #    self.init_actor, self.update_actor = get_target_updates(
-    #        tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'),
-    #        tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_actor'), self.tau)
+    def build_copy_op(self):
+        self.init_actor, self.update_actor = get_target_updates(
+            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'),
+            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_actor'), self.tau)
 
     def build_critic(self):
         self.critic = QRVNetwork(self.hidden_dims, 'critic', self.value_reg, self.n_agent)
@@ -180,10 +188,10 @@ class SMPPO(object):
         log_std = tf.gather_nd(log_std, action_id)
         self.actor_output = (mean, log_std)
 
-        #mean_target, log_std_target = self.actor_target(self.states)
-        #mean_target = tf.gather_nd(mean_target, action_id)
-        #log_std_target = tf.gather_nd(log_std_target, action_id)
-        #self.actor_output_target = (mean_target, log_std_target)
+        mean_target, log_std_target = self.actor_target(self.states)
+        mean_target = tf.gather_nd(mean_target, action_id)
+        log_std_target = tf.gather_nd(log_std_target, action_id)
+        self.actor_output_target = (mean_target, log_std_target)
 
         action_loglikelihood = self.get_agent_action_loglikelihood(self.actions, self.actor_output)
         ratio = tf.exp(action_loglikelihood-self.action_loglikelihood[:, None])
@@ -207,13 +215,19 @@ class SMPPO(object):
             var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='actor'))
 
     def train(self, sess, saver, summary_writer, progress_fd, model_path, filter_path, batch_size=64, step=10, start_episode=0,
-              train_episodes=1000, save_episodes=100, max_episode_len=25, **kargs):
+              train_episodes=1000, save_episodes=100, max_episode_len=25, opponent_sampling_episodes=1000, **kargs):
         total_rewards = []
         n_step = 0
         i_episode = 0
-        #sess.run([self.init_actor])
+        sess.run([self.init_actor])
         for i_episode in tqdm(range(train_episodes), ncols=100):
-            states_mem, actions_mem, action_loglikelihood_mem, returns_mem, advantage_mem, agent_id_mem, epi_avg_reward = self.collect_transitions(sess, max_episode_len)
+            if i_episode < opponent_sampling_episodes:
+                ret = self.collect_transitions_pure_selfplay(sess, max_episode_len)
+            else:
+                ret = self.collect_transitions_sampling_opponent(sess, max_episode_len)
+            states_mem, actions_mem, action_loglikelihood_mem, returns_mem = ret[0], ret[1], ret[2], ret[3]
+            advantage_mem, agent_id_mem, epi_avg_reward = ret[4], ret[5], ret[6]
+
             for s in range(step):
                 perm = np.random.permutation(len(states_mem))
                 for sample_id in range(0, len(perm), batch_size):
@@ -227,12 +241,14 @@ class SMPPO(object):
             #print(self.actor_loss.eval(feed_dict=feed_dict))
             #if i_episode == 10:
             #    exit()
-            #sess.run([self.update_actor])
+            #
             n_step += self.horrizon
             append_summary(progress_fd, str(start_episode+i_episode) + ",{0:.2f}".format(epi_avg_reward)+ ",{}".format(n_step))
             total_rewards.append(epi_avg_reward)
             if (i_episode + 1) % save_episodes == 0:
+                sess.run([self.update_actor])
                 saver.save(sess, model_path)
+                self.save_state_filter(filter_path)
         return total_rewards
     def get_deterministic_action(self, sess, states, agent_id):
         feed_dict = {self.states: states.reshape(1, -1), 
@@ -276,7 +292,7 @@ class SMPPO(object):
             action.append(a)
         return action, agent_to_train, action_to_train, loglikelihood_to_train, state_to_train
 
-    '''def collect_transitions(self, sess, max_episode_len=25):
+    def collect_transitions_sampling_opponent(self, sess, max_episode_len=25):
         total_rewards = []
         states = np.zeros((self.horrizon+1, self.n_agent*self.state_dim))
         states_to_train = np.zeros((self.horrizon, self.state_dim))
@@ -290,6 +306,10 @@ class SMPPO(object):
             if self.env_info['done']:
                 state = self.env.reset()
                 episode_steps = 0
+                state_ = []
+                for s in state:
+                    state_.append(self.running_state(s))
+                #state = state_
                 state = np.concatenate([j.reshape(1,-1) for j in state], axis=1).flatten()
                 self.env_info['last_state'] = state
                 self.env_info['done'] = False
@@ -302,6 +322,10 @@ class SMPPO(object):
             states_to_train[step] = s
             state, reward, done, _ = self.env.step(action)
             episode_steps += 1
+            state_ = []
+            for s in state:
+                state_.append(self.running_state(s))
+            #state = state_
             state = np.concatenate([j.reshape(1,-1) for j in state], axis=1).flatten()
             self.env_info['last_state'] = state
             self.env_info['total_reward'] += reward[0]
@@ -342,9 +366,9 @@ class SMPPO(object):
         advantages = (advantages-advantages.mean())/(advantages.std()+1e-10)
 
         
-        return states_to_train, actions, actions_loglikelihood, returns, advantages, agent_id, np.mean(total_rewards)'''
+        return states_to_train, actions, actions_loglikelihood, returns, advantages, agent_id, np.mean(total_rewards)
 
-    def collect_transitions(self, sess, max_episode_len=25):
+    def collect_transitions_pure_selfplay(self, sess, max_episode_len=25):
         total_rewards = []
         states = np.zeros((self.horrizon+1, self.n_agent*self.state_dim))
         actions = np.zeros((self.horrizon, self.n_agent*self.action_dim))
@@ -356,6 +380,10 @@ class SMPPO(object):
             if self.env_info['done']:
                 state = self.env.reset()
                 episode_steps = 0
+                state_ = []
+                for s in state:
+                    state_.append(self.running_state(s))
+                #state = state_
                 state = np.concatenate([j.reshape(1,-1) for j in state], axis=1).flatten()
                 self.env_info['last_state'] = state
                 self.env_info['done'] = False
@@ -373,6 +401,10 @@ class SMPPO(object):
                 loglikelihood.append(ll)
             state, reward, done, _ = self.env.step(action)
             episode_steps += 1
+            state_ = []
+            for s in state:
+                state_.append(self.running_state(s))
+            #state = state_
             state = np.concatenate([j.reshape(1,-1) for j in state], axis=1).flatten()
             self.env_info['last_state'] = state
             self.env_info['total_reward'] += reward[0]
