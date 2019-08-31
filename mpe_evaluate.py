@@ -314,23 +314,41 @@ if __name__ == '__main__':
     #team1_dir = os.path.join("exp-1-model", "simple_spread_modified", "policy")
     #team_1 = ImportMaddpgAgents(team1_dir, env)'''
     env =  make_env("simple_spread_modified", arglist, True)
-    maddpg_teams = []
-    m3ddpg_teams = []
-    for i in range(3):
-        maddpg_dir = os.path.join("exp-{}-model".format(i), "simple_spread_modified", "policy")
-        maddpg_team = ImportMaddpgAgents(maddpg_dir, env)
-        maddpg_teams.append(maddpg_team)
-        m3ddpg_dir = os.path.join("exp-{}-model".format(i), "m3ddpg_simple_spread_modified", "policy")
-        m3ddpg_team = ImportM3ddpgAgents(m3ddpg_dir, env)
-        m3ddpg_teams.append(m3ddpg_team)
+    SMPPO_teams = []
+    for i in range(3,6):
+        SMPPO_dir = os.path.join("exp-{}-model".format(i), "SMPPO_simple_spread_modified")
+        SMPPO_team = ImportMQRPPOAgent(SMPPO_dir, env)
+        SMPPO_teams.append(SMPPO_team)
     # No new agent
+    '''
     scores = []
     for team_id in range(3):
-        scores.append(evaluate_simple_spread([maddpg_teams[team_id], maddpg_teams[team_id], maddpg_teams[team_id]], env, True))
-    print("maddpg no new agent {:.4f}+-{:.4f}, n-trail {}".format(np.mean(scores), np.std(scores)/np.sqrt(len(scores)), len(scores)))
+        scores.append(evaluate_simple_spread([SMPPO_teams[team_id], SMPPO_teams[team_id], SMPPO_teams[team_id]], env))
+    print("SMPPO no new agent {:.4f}+-{:.4f}, n-trail {}".format(np.mean(scores), np.std(scores)/np.sqrt(len(scores)), len(scores)))
+    '''
+    scores = []
+    for eq in range(3):
+        for neq in range(3):
+            if neq == eq:
+                continue
+            for neq_pos in range(3):
+                agent_list = [eq for i in range(0, neq_pos)]
+                agent_list.append(neq)
+                agent_list += [eq for i in range(neq_pos+1, 3)]
+                agent_list = [SMPPO_teams[i] for i in agent_list]
+                scores.append(evaluate_simple_spread(agent_list, env))
+    print("SMPPO one new agent {:.4f}+-{:.4f}, n-trail {}".format(np.mean(scores), np.std(scores)/np.sqrt(len(scores)), len(scores)))
+    scores = []
+    for i in range(3):
+        for j in range(3):
+            for k in range(3):
+                if i==j or i==k or j==k:
+                    continue
+                agent_list = [SMPPO_teams[i], SMPPO_teams[j], SMPPO_teams[k]]
+                scores.append(evaluate_simple_spread(agent_list, env))
+    print("SMPPO two new agent {:.4f}+-{:.4f}, n-trail {}".format(np.mean(scores), np.std(scores)/np.sqrt(len(scores)), len(scores)))
     scores = []
     for team_id in range(3):
-        scores.append(evaluate_simple_spread([m3ddpg_teams[team_id], m3ddpg_teams[team_id], m3ddpg_teams[team_id]], env, True))
-    print("m3ddpg no new agent {:.4f}+-{:.4f}, n-trail {}".format(np.mean(scores), np.std(scores)/np.sqrt(len(scores)), len(scores)))
-
+        scores.append(evaluate_simple_spread([SMPPO_teams[team_id], SMPPO_teams[team_id], SMPPO_teams[team_id]], env, True))
+    print("SMPPO no new agent {:.4f}+-{:.4f}, n-trail {}".format(np.mean(scores), np.std(scores)/np.sqrt(len(scores)), len(scores)))
     
